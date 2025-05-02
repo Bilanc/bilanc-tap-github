@@ -1412,8 +1412,11 @@ def main():
 
     args.config["is_jwt_token"] = False
     if not "access_token" in args.config:
-        args.config["access_token"] = get_jwt_token(args.config)
-        args.config["is_jwt_token"] = True
+        if os.getenv("GITHUB_ACCESS_TOKEN") is not None:
+            args.config["access_token"] = os.getenv("GITHUB_ACCESS_TOKEN")
+        else:
+            args.config["access_token"] = get_jwt_token(args.config)
+            args.config["is_jwt_token"] = True
 
     if args.discover:
         do_discover(args.config)
