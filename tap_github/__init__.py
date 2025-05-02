@@ -13,6 +13,10 @@ from datetime import datetime
 from singer import (bookmarks, metrics, metadata)
 from simplejson import JSONDecodeError
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 session = requests.Session()
 logger = singer.get_logger()
 
