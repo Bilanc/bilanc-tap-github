@@ -919,7 +919,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
         with metrics.record_counter('reviews') as reviews_counter:
             for response in authed_get_all_pages(
                     'pull_requests',
-                    'https://api.github.com/repos/{}/pulls?state=all&sort=updated&direction=desc'.format(repo_path)
+                    'https://api.github.com/repos/{}/pulls?state=all&sort=updated&direction=desc&per_page=100'.format(repo_path)
             ):
                 pull_requests = response.json()
                 extraction_time = singer.utils.now()
@@ -1039,7 +1039,7 @@ def get_review_comments_for_pr(pr_number, schema, repo_path, state, mdata):
 def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
     for response in authed_get_all_pages(
             'pr_commits',
-            'https://api.github.com/repos/{}/pulls/{}/commits'.format(repo_path,pr_number)
+            'https://api.github.com/repos/{}/pulls/{}/commits&per_page=100'.format(repo_path,pr_number)
     ):
 
         commit_data = response.json()
@@ -1139,7 +1139,7 @@ def get_all_commits(schema, repo_path,  state, mdata, start_date):
     with metrics.record_counter('commits') as counter:
         for response in authed_get_all_pages(
                 'commits',
-                'https://api.github.com/repos/{}/commits{}'.format(repo_path, query_string)
+                'https://api.github.com/repos/{}/commits{}?per_page=100'.format(repo_path, query_string)
         ):
             commits = response.json()
             extraction_time = singer.utils.now()
@@ -1167,7 +1167,7 @@ def get_all_issues(schema, repo_path,  state, mdata, start_date):
     with metrics.record_counter('issues') as counter:
         for response in authed_get_all_pages(
                 'issues',
-                'https://api.github.com/repos/{}/issues?state=all&sort=updated&direction=asc{}'.format(repo_path, query_string)
+                'https://api.github.com/repos/{}/issues?state=all&sort=updated&direction=asc{}&per_page=100'.format(repo_path, query_string)
         ):
             issues = response.json()
             extraction_time = singer.utils.now()
