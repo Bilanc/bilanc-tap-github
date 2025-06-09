@@ -1039,7 +1039,7 @@ def get_review_comments_for_pr(pr_number, schema, repo_path, state, mdata):
 def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
     for response in authed_get_all_pages(
             'pr_commits',
-            'https://api.github.com/repos/{}/pulls/{}/commits&per_page=100'.format(repo_path,pr_number)
+            'https://api.github.com/repos/{}/pulls/{}/commits?per_page=100'.format(repo_path,pr_number)
     ):
 
         commit_data = response.json()
