@@ -7,9 +7,9 @@ import backoff
 import singer
 import jwt
 import math
-
-from datetime import datetime
-
+import argparse
+from datetime import datetime, timedelta
+import pytz
 from singer import (bookmarks, metrics, metadata)
 from simplejson import JSONDecodeError
 
@@ -208,9 +208,9 @@ def raise_for_error(resp, source):
         logger.info(message)
         # don't raise a NotFoundException
         return None
-
-    if error_code == 403 and response_json and "message" in response_json and "API rate limit exceeded" in response_json["message"]:
-        raise APIRateLimitExceededError(f"[Error Code] {error_code}: {response_json}")
+    
+    if error_code == 403:
+        raise AuthException(f"[Error Code] {error_code}: {response_json}")
     
     if 500 <= error_code < 600:
         raise  RetriableServerError(resp.text)
@@ -223,6 +223,8 @@ def raise_for_error(resp, source):
 
 def calculate_seconds(epoch):
     current = time.time()
+    if epoch < current:
+        return 1
     return math.ceil(epoch - current)
 
 def get_reset_time_and_remaining_calls(response, message = "Reset time will be reached in {} seconds. Remaining {} calls"):
@@ -243,6 +245,23 @@ def rate_throttling(response):
         logger.info("API rate limit was consumed. Tap will retry the data collection after %s seconds.", seconds_to_sleep)
         time.sleep(seconds_to_sleep)
 
+access_token_expires_at = None
+refresh_token_expires_at = None
+config_path = None
+
+
+def refresh_token_if_expired():
+    stale_access_token = access_token_expires_at and access_token_expires_at < datetime.now(pytz.UTC).isoformat()
+    stale_refresh_token = refresh_token_expires_at and refresh_token_expires_at < datetime.now(pytz.UTC).isoformat()
+    
+    if stale_access_token or stale_refresh_token:
+        # Pull config
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        refresh_oauth_token(config)
+
+
 # pylint: disable=dangerous-default-value
 # during 'Timeout' error there is also possibility of 'ConnectionError',
 # hence added backoff for 'ConnectionError' too.
@@ -256,11 +275,13 @@ def rate_throttling(response):
         APIRateLimitExceededError,
         RetriableServerError,
         InternalServerError,
+        AuthException,
     ),
     max_tries=10,
     factor=2,
 )
 def authed_get(source, url, headers={}):
+    refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
         session.headers.update(headers)
         logger.info("Making request to %s", url)
@@ -1323,6 +1344,78 @@ def get_jwt_token(config):
 
     return token
 
+def refresh_oauth_token(config):
+    """
+    Refreshes the OAuth access token using the refresh token
+    and updates the config file with the new tokens.
+    
+    Args:
+        config (dict): The current configuration with refresh_token
+        
+    Returns:
+        dict: Updated config with new access_token and refresh_token
+    """
+    global access_token_expires_at
+    global refresh_token_expires_at
+    if "refresh_token" not in config:
+        logger.error("No refresh token found in config, cannot refresh access token")
+        raise BadCredentialsException("No refresh token found in config")
+    
+    logger.info("Refreshing OAuth access token")
+    
+    token_url = "https://github.com/login/oauth/access_token"
+    
+    data = {
+        "client_id": config["client_id"],
+        "client_secret": config["client_secret"],
+        "refresh_token": config["refresh_token"],
+        "grant_type": "refresh_token"
+    }
+    
+    headers = {
+        "Accept": "application/json"
+    }
+    
+    try:
+        response = requests.post(token_url, data=data, headers=headers)
+        response.raise_for_status()
+        token_data = response.json()
+        
+        config["access_token"] = token_data["access_token"]
+        now = datetime.now(pytz.UTC)
+        if "expires_in" in token_data:
+            config["access_token_expires_at"] = (now + timedelta(seconds=token_data["expires_in"] - 60)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            access_token_expires_at = config["access_token_expires_at"]
+        if "refresh_token_expires_in" in token_data:
+            config["refresh_token_expires_at"] = (now + timedelta(seconds=token_data["refresh_token_expires_in"] - 60)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            refresh_token_expires_at = config["refresh_token_expires_at"]
+        if "refresh_token" in token_data:
+            config["refresh_token"] = token_data["refresh_token"]
+        save_config(config)
+
+        session.headers['Authorization'] = 'Bearer ' + config["access_token"]
+        
+        logger.info("Successfully refreshed OAuth access token")
+        return config
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to refresh OAuth token: {str(e)}")
+        raise BadCredentialsException(f"Failed to refresh OAuth token: {str(e)}")
+
+def save_config(config):
+    """
+    Saves the updated config back to the config file.
+    
+    Args:
+        config (dict): The updated configuration
+    """
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=4)
+        logger.info(f"Updated config saved to {config_path}")
+    except Exception as e:
+        logger.warning(f"Failed to save updated config: {str(e)}")
+
 SYNC_FUNCTIONS = {
     'commits': get_all_commits,
     'comments': get_all_comments,
@@ -1412,20 +1505,39 @@ def do_sync(config, state, catalog):
 
 @singer.utils.handle_top_exception(logger)
 def main():
+    global access_token_expires_at
+    global refresh_token_expires_at
+    global config_path
+
+    # Store config path for later use
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='config.json')
+    path_args, unknown = parser.parse_known_args()
+    config_path = path_args.config
+
+
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     args.config["is_jwt_token"] = False
-    if not "access_token" in args.config:
-        if os.getenv("GITHUB_ACCESS_TOKEN") is not None:
-            args.config["access_token"] = os.getenv("GITHUB_ACCESS_TOKEN")
-        else:
+    access_token_expires_at = args.config.get("access_token_expires_at")
+    refresh_token_expires_at = args.config.get("refresh_token_expires_at")
+    
+    if not args.config.get("access_token"):
+        if "app_id" in args.config and "private_key" in args.config and "installation_id" in args.config:
             args.config["access_token"] = get_jwt_token(args.config)
             args.config["is_jwt_token"] = True
+        elif "refresh_token" in args.config and "client_id" in args.config and "client_secret" in args.config:
+            args.config = refresh_oauth_token(args.config)
+        elif os.getenv("GITHUB_ACCESS_TOKEN") is not None:
+            args.config["access_token"] = os.getenv("GITHUB_ACCESS_TOKEN")
+        else:
+            raise BadCredentialsException("No valid authentication method provided. Either provide an access_token, or app credentials, or OAuth credentials with refresh token.")
 
     if args.discover:
         do_discover(args.config)
     else:
         catalog = args.properties if args.properties else get_catalog()
+
         do_sync(args.config, args.state, catalog)
 
 if __name__ == '__main__':
