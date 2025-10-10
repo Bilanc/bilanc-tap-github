@@ -13,6 +13,10 @@ import pytz
 from singer import (bookmarks, metrics, metadata)
 from simplejson import JSONDecodeError
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 session = requests.Session()
 logger = singer.get_logger()
 
@@ -936,7 +940,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
         with metrics.record_counter('reviews') as reviews_counter:
             for response in authed_get_all_pages(
                     'pull_requests',
-                    'https://api.github.com/repos/{}/pulls?state=all&sort=updated&direction=desc'.format(repo_path)
+                    'https://api.github.com/repos/{}/pulls?state=all&sort=updated&direction=desc&per_page=100'.format(repo_path)
             ):
                 pull_requests = response.json()
                 extraction_time = singer.utils.now()
@@ -1056,7 +1060,7 @@ def get_review_comments_for_pr(pr_number, schema, repo_path, state, mdata):
 def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
     for response in authed_get_all_pages(
             'pr_commits',
-            'https://api.github.com/repos/{}/pulls/{}/commits'.format(repo_path,pr_number)
+            'https://api.github.com/repos/{}/pulls/{}/commits?per_page=100'.format(repo_path,pr_number)
     ):
 
         commit_data = response.json()
@@ -1156,7 +1160,7 @@ def get_all_commits(schema, repo_path,  state, mdata, start_date):
     with metrics.record_counter('commits') as counter:
         for response in authed_get_all_pages(
                 'commits',
-                'https://api.github.com/repos/{}/commits{}'.format(repo_path, query_string)
+                'https://api.github.com/repos/{}/commits{}?per_page=100'.format(repo_path, query_string)
         ):
             commits = response.json()
             extraction_time = singer.utils.now()
@@ -1184,7 +1188,7 @@ def get_all_issues(schema, repo_path,  state, mdata, start_date):
     with metrics.record_counter('issues') as counter:
         for response in authed_get_all_pages(
                 'issues',
-                'https://api.github.com/repos/{}/issues?state=all&sort=updated&direction=asc{}'.format(repo_path, query_string)
+                'https://api.github.com/repos/{}/issues?state=all&sort=updated&direction=asc{}&per_page=100'.format(repo_path, query_string)
         ):
             issues = response.json()
             extraction_time = singer.utils.now()
@@ -1515,7 +1519,6 @@ def main():
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     args.config["is_jwt_token"] = False
-
     access_token_expires_at = args.config.get("access_token_expires_at")
     refresh_token_expires_at = args.config.get("refresh_token_expires_at")
     
@@ -1525,6 +1528,8 @@ def main():
             args.config["is_jwt_token"] = True
         elif "refresh_token" in args.config and "client_id" in args.config and "client_secret" in args.config:
             args.config = refresh_oauth_token(args.config)
+        elif os.getenv("GITHUB_ACCESS_TOKEN") is not None:
+            args.config["access_token"] = os.getenv("GITHUB_ACCESS_TOKEN")
         else:
             raise BadCredentialsException("No valid authentication method provided. Either provide an access_token, or app credentials, or OAuth credentials with refresh token.")
 
