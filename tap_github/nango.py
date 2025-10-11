@@ -39,8 +39,6 @@ def refresh_nango_token(
 
     response = response.json()
 
-    print(response)
-
     config["access_token"] = response.get("credentials", {}).get("access_token")
 
     expires_at: str = response.get("credentials", {}).get("expires_at")

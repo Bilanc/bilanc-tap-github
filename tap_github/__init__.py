@@ -13,11 +13,8 @@ import pytz
 from singer import (bookmarks, metrics, metadata)
 from simplejson import JSONDecodeError
 
-from dotenv import load_dotenv
 from tap_github.nango import refresh_nango_token
 
-
-load_dotenv()
 
 session = requests.Session()
 logger = singer.get_logger()
@@ -1544,7 +1541,6 @@ def main():
     if args.discover:
         do_discover(args.config)
     else:
-        print(args.config)
         catalog = args.properties if args.properties else get_catalog()
 
         do_sync(args.config, args.state, catalog)
