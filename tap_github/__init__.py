@@ -14,6 +14,8 @@ from singer import (bookmarks, metrics, metadata)
 from simplejson import JSONDecodeError
 
 from dotenv import load_dotenv
+from tap_github.nango import refresh_nango_token
+
 
 load_dotenv()
 
@@ -249,6 +251,7 @@ access_token_expires_at = None
 refresh_token_expires_at = None
 config_path = None
 organization = None
+is_nango_token = False
 
 
 def refresh_token_if_expired():
@@ -259,8 +262,11 @@ def refresh_token_if_expired():
         # Pull config
         with open(config_path, 'r') as f:
             config = json.load(f)
-        
-        refresh_oauth_token(config)
+
+        if is_nango_token:
+            refresh_nango_token(config)
+        else:
+            refresh_oauth_token(config)
 
 
 # pylint: disable=dangerous-default-value
@@ -1502,6 +1508,7 @@ def main():
     global refresh_token_expires_at
     global config_path
     global organization
+    global is_nango_token
 
     # Store config path for later use
     parser = argparse.ArgumentParser()
@@ -1516,6 +1523,12 @@ def main():
     organization = args.config["organization"] 
     access_token_expires_at = args.config.get("access_token_expires_at")
     refresh_token_expires_at = args.config.get("refresh_token_expires_at")
+    nango_connection_id = args.config.get("nango_connection_id")
+    nango_secret_key = args.config.get("nango_secret_key")
+
+    if nango_connection_id and nango_secret_key:
+        args.config, access_token_expires_at = refresh_nango_token(args.config)
+        is_nango_token = True
     
     if not args.config.get("access_token"):
         if "app_id" in args.config and "private_key" in args.config and "installation_id" in args.config:
@@ -1531,6 +1544,7 @@ def main():
     if args.discover:
         do_discover(args.config)
     else:
+        print(args.config)
         catalog = args.properties if args.properties else get_catalog()
 
         do_sync(args.config, args.state, catalog)
