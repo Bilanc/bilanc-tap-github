@@ -248,6 +248,7 @@ def rate_throttling(response):
 access_token_expires_at = None
 refresh_token_expires_at = None
 config_path = None
+organization = None
 
 
 def refresh_token_if_expired():
@@ -530,28 +531,20 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
     with metrics.record_counter('organizations') as counter:
         for response in authed_get_all_pages(
                 'organizations',
-                'https://api.github.com/user/orgs?sort=created_at&direction=desc'
+                f'https://api.github.com/orgs/{organization}'
         ):
-            organizations = response.json()
+            r = response.json()
             extraction_time = singer.utils.now()
 
-            for r in organizations:
-
-                if r["id"] in VISITED_ORGS_IDS:
-                    continue
-                else:
-                    VISITED_ORGS_IDS.add(r["id"])
-                    
-
-                # transform and write release record
-                with singer.Transformer() as transformer:
-                    rec = transformer.transform(r, schemas['organizations'], metadata=metadata.to_map(mdata['organizations']))
-                singer.write_record('organizations', rec, time_extracted=extraction_time)
-                counter.increment()
-
-                if schemas.get('organization_members'):
-                    for team_members_rec in get_all_organization_members(rec, schemas['organization_members'], repo_path, state, mdata['organization_members']):
-                        singer.write_record('organization_members', team_members_rec, time_extracted=extraction_time)
+          
+            # transform and write release record
+            with singer.Transformer() as transformer:
+                rec = transformer.transform(r, schemas['organizations'], metadata=metadata.to_map(mdata['organizations']))
+            singer.write_record('organizations', rec, time_extracted=extraction_time)
+            counter.increment()
+            if schemas.get('organization_members'):
+                for team_members_rec in get_all_organization_members(rec, schemas['organization_members'], repo_path, state, mdata['organization_members']):
+                    singer.write_record('organization_members', team_members_rec, time_extracted=extraction_time)
     return state
 
 def get_all_organization_members(org, schemas, repo_path, state, mdata):
@@ -1508,6 +1501,7 @@ def main():
     global access_token_expires_at
     global refresh_token_expires_at
     global config_path
+    global organization
 
     # Store config path for later use
     parser = argparse.ArgumentParser()
@@ -1519,6 +1513,7 @@ def main():
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     args.config["is_jwt_token"] = False
+    organization = args.config["organization"] 
     access_token_expires_at = args.config.get("access_token_expires_at")
     refresh_token_expires_at = args.config.get("refresh_token_expires_at")
     
