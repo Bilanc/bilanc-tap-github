@@ -264,7 +264,7 @@ def refresh_token_if_expired():
         if is_nango_token:
             logger.info("Nango access token is stale, refreshing...")
             config, access_token_expires_at = refresh_nango_token(config)
-            access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.info(f"Refreshed Nango access token, expires at {access_token_expires_at}")
             session.headers['Authorization'] = 'Bearer ' + config["access_token"]
             save_config(config)
@@ -1531,7 +1531,7 @@ def main():
 
     if nango_connection_id and nango_secret_key:
         args.config, access_token_expires_at = refresh_nango_token(args.config)
-        access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
         logger.info(f"Refreshed Nango access token, expires at {access_token_expires_at}")
         is_nango_token = True
     
