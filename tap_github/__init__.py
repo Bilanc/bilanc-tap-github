@@ -252,6 +252,7 @@ is_nango_token = False
 
 
 def refresh_token_if_expired():
+    global access_token_expires_at
     stale_access_token = access_token_expires_at and access_token_expires_at < datetime.now(pytz.UTC).isoformat()
     stale_refresh_token = refresh_token_expires_at and refresh_token_expires_at < datetime.now(pytz.UTC).isoformat()
     
@@ -261,7 +262,8 @@ def refresh_token_if_expired():
             config = json.load(f)
 
         if is_nango_token:
-            refresh_nango_token(config)
+            config, access_token_expires_at = refresh_nango_token(config)
+            save_config(config)
         else:
             refresh_oauth_token(config)
 
