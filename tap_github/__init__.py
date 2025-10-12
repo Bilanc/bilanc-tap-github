@@ -263,6 +263,7 @@ def refresh_token_if_expired():
 
         if is_nango_token:
             config, access_token_expires_at = refresh_nango_token(config)
+            session.headers['Authorization'] = 'Bearer ' + config["access_token"]
             save_config(config)
         else:
             refresh_oauth_token(config)
