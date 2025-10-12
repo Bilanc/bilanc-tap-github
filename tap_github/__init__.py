@@ -263,6 +263,7 @@ def refresh_token_if_expired():
 
         if is_nango_token:
             config, access_token_expires_at = refresh_nango_token(config)
+            access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
             session.headers['Authorization'] = 'Bearer ' + config["access_token"]
             save_config(config)
         else:
@@ -1528,6 +1529,7 @@ def main():
 
     if nango_connection_id and nango_secret_key:
         args.config, access_token_expires_at = refresh_nango_token(args.config)
+        access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
         is_nango_token = True
     
     if not args.config.get("access_token"):
