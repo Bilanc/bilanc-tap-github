@@ -262,6 +262,7 @@ def refresh_token_if_expired():
             config = json.load(f)
 
         if is_nango_token:
+            logger.info("Nango access token is stale, refreshing...")
             config, access_token_expires_at = refresh_nango_token(config)
             access_token_expires_at = (datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ") - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.info(f"Refreshed Nango access token, expires at {access_token_expires_at}")
