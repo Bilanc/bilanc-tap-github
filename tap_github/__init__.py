@@ -539,22 +539,22 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
 
 def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
     with metrics.record_counter('organizations') as counter:
-        for response in authed_get_all_pages(
+        response = authed_get(
                 'organizations',
                 f'https://api.github.com/orgs/{organization}'
-        ):
-            r = response.json()
-            extraction_time = singer.utils.now()
+        )
+        r = response.json()
+        extraction_time = singer.utils.now()
+        
+        # transform and write release record
+        with singer.Transformer() as transformer:
+            rec = transformer.transform(r, schemas['organizations'], metadata=metadata.to_map(mdata['organizations']))
+        singer.write_record('organizations', rec, time_extracted=extraction_time)
+        counter.increment()
+        if schemas.get('organization_members'):
+            for team_members_rec in get_all_organization_members(rec, schemas['organization_members'], repo_path, state, mdata['organization_members']):
+                singer.write_record('organization_members', team_members_rec, time_extracted=extraction_time)
 
-          
-            # transform and write release record
-            with singer.Transformer() as transformer:
-                rec = transformer.transform(r, schemas['organizations'], metadata=metadata.to_map(mdata['organizations']))
-            singer.write_record('organizations', rec, time_extracted=extraction_time)
-            counter.increment()
-            if schemas.get('organization_members'):
-                for team_members_rec in get_all_organization_members(rec, schemas['organization_members'], repo_path, state, mdata['organization_members']):
-                    singer.write_record('organization_members', team_members_rec, time_extracted=extraction_time)
     return state
 
 def get_all_organization_members(org, schemas, repo_path, state, mdata):
