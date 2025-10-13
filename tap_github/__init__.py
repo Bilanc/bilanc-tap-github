@@ -1464,7 +1464,7 @@ def do_sync(config, state, catalog):
     singer.write_state(state)
 
     #pylint: disable=too-many-nested-blocks
-    for repo in repositories:
+    for index, repo in enumerate(repositories):
         logger.info("Starting sync of repository: %s", repo)
         for stream in catalog['streams']:
             stream_id = stream['tap_stream_id']
@@ -1473,6 +1473,10 @@ def do_sync(config, state, catalog):
 
             # if it is a "sub_stream", it will be sync'd by its parent
             if not SYNC_FUNCTIONS.get(stream_id):
+                continue
+
+            if index > 0 and stream_id in ["teams", "organizations"]:
+                # these streams only need to be run once, not per repo
                 continue
 
             # if stream is selected, write schema and sync
