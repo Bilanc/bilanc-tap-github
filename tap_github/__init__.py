@@ -335,6 +335,24 @@ def generate_pr_commit_schema(commit_schema):
     pr_commit_schema['properties']['id'] = {
         "type": ["null", "string"]
     }
+    pr_commit_schema["properties"]["files"] = {
+        "type": ["array", "null"],
+        "items": {
+            "type": "object",
+            "properties": {
+                "sha": {"type": ["string", "null"]},
+                "filename": {"type": ["string", "null"]},
+                "status": {"type": ["string", "null"]},
+                "additions": {"type": ["integer", "null"]},
+                "deletions": {"type": ["integer", "null"]},
+                "changes": {"type": ["integer", "null"]},
+                "blob_url": {"type": ["string", "null"], "format": "uri"},
+                "raw_url": {"type": ["string", "null"], "format": "uri"},
+                "contents_url": {"type": ["string", "null"], "format": "uri"},
+                "patch": {"type": ["string", "null"]},
+            },
+        },
+    }
 
     return pr_commit_schema
 
@@ -1071,10 +1089,19 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
             commit['_sdc_repository'] = repo_path
             commit['pr_number'] = pr_number
             commit['pr_id'] = pr_id
-            commit['id'] = '{}-{}'.format(pr_id, commit['sha'])
-            with singer.Transformer() as transformer:
-                rec = transformer.transform(commit, schema, metadata=metadata.to_map(mdata))
-            yield rec
+            sha: str = commit["sha"]
+            commit["id"] = "{}-{}".format(pr_id, sha)
+            for response in authed_get_all_pages(
+                "commit_details",
+                "https://api.github.com/repos/{}/commits/{}".format(repo_path, sha),
+            ):
+                commit_details = response.json()
+                commit["files"] = commit_details.get("files", [])
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        commit, schema, metadata=metadata.to_map(mdata)
+                    )
+                yield rec
 
         return state
 
