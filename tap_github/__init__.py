@@ -32,7 +32,7 @@ KEY_PROPERTIES = {
     "collaborators": ["id"],
     "pull_requests": ["id"],
     "pull_request_details": ["id"],
-    "pull_request_files": ["pr_id"],
+    "pull_request_files": ["id"],
     "stargazers": ["user_id"],
     "releases": ["id"],
     "reviews": ["id"],
