@@ -32,7 +32,7 @@ KEY_PROPERTIES = {
     "collaborators": ["id"],
     "pull_requests": ["id"],
     "pull_request_details": ["id"],
-    "pull_request_files": ["id"],
+    "pull_request_files": ["pr_id"],
     "stargazers": ["user_id"],
     "releases": ["id"],
     "reviews": ["id"],
@@ -1264,6 +1264,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                     pr_num = pr.get("number")
                     pr_id = pr.get("id")
                     pr["_sdc_repository"] = repo_path
+                    pr_state = pr.get("state")
 
                     # transform and write pull_request record
                     try:
@@ -1349,7 +1350,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                                 {"since": singer.utils.strftime(extraction_time)},
                             )
 
-                    if schemas.get("pull_request_files"):
+                    if schemas.get("pull_request_files") and pr_state == "closed":
                         for pr_file in get_pull_request_files(
                             pr_num,
                             pr_id,
