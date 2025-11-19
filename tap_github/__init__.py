@@ -16,6 +16,12 @@ from simplejson import JSONDecodeError
 from tap_github.nango import refresh_nango_token
 
 
+def add_insert_timestamp(record):
+    """Add current timestamp to record as inserted_at field"""
+    record["inserted_at"] = singer.utils.strftime(singer.utils.now())
+    return record
+
+
 session = requests.Session()
 logger = singer.get_logger()
 
@@ -627,6 +633,7 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
                     rec = transformer.transform(
                         r, schemas["teams"], metadata=metadata.to_map(mdata["teams"])
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("teams", rec, time_extracted=extraction_time)
                 counter.increment()
 
@@ -676,6 +683,7 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
                 schemas["organizations"],
                 metadata=metadata.to_map(mdata["organizations"]),
             )
+        add_insert_timestamp(rec)
         singer.write_record("organizations", rec, time_extracted=extraction_time)
         counter.increment()
         if schemas.get("organization_members"):
@@ -716,6 +724,7 @@ def get_all_organization_members(org, schemas, repo_path, state, mdata):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 counter.increment()
                 yield rec
     return state
@@ -740,6 +749,7 @@ def get_all_team_members(team_slug, schemas, repo_path, state, mdata):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 counter.increment()
 
                 yield rec
@@ -814,6 +824,7 @@ def get_all_issue_events(schemas, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         event, schemas, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("issue_events", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
@@ -869,6 +880,7 @@ def get_all_events(schemas, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("events", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
@@ -1217,6 +1229,7 @@ def get_all_releases(schemas, repo_path, state, mdata, _start_date):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("releases", rec, time_extracted=extraction_time)
                 counter.increment()
 
@@ -1278,6 +1291,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                         logger.exception(f"Failed to transform record [{pr}]")
                         raise
 
+                    add_insert_timestamp(rec)
                     singer.write_record(
                         "pull_requests", rec, time_extracted=extraction_time
                     )
@@ -1407,6 +1421,7 @@ def get_pull_request_details(pull_request, schemas, repo_path, state, mdata):
     # transform and write release record
     with singer.Transformer() as transformer:
         rec = transformer.transform(pr, schemas, metadata=metadata.to_map(mdata))
+    add_insert_timestamp(rec)
     return rec
 
 
@@ -1519,6 +1534,7 @@ def get_all_assignees(schema, repo_path, state, mdata, _start_date):
                     rec = transformer.transform(
                         assignee, schema, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("assignees", rec, time_extracted=extraction_time)
                 counter.increment()
 
@@ -1551,6 +1567,7 @@ def get_all_collaborators(schema, repo_path, state, mdata, _start_date):
                         rec = transformer.transform(
                             collaborator, schema, metadata=metadata.to_map(mdata)
                         )
+                    add_insert_timestamp(rec)
                     singer.write_record(
                         "collaborators", rec, time_extracted=extraction_time
                     )
@@ -1584,6 +1601,7 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         commit, schema, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("commits", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
@@ -1622,6 +1640,7 @@ def get_all_issues(schema, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         issue, schema, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("issues", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
@@ -1659,6 +1678,7 @@ def get_all_comments(schema, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         comment, schema, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("comments", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
@@ -1693,6 +1713,7 @@ def get_all_stargazers(schema, repo_path, state, mdata, _start_date):
                         stargazer, schema, metadata=metadata.to_map(mdata)
                     )
                 rec["user_id"] = user_id
+                add_insert_timestamp(rec)
                 singer.write_record("stargazers", rec, time_extracted=extraction_time)
                 counter.increment()
 
@@ -1720,6 +1741,7 @@ def get_all_deployments(schema, repo_path, state, mdata, _start_date):
                     rec = transformer.transform(
                         deployment, schema, metadata=metadata.to_map(mdata)
                     )
+                add_insert_timestamp(rec)
                 singer.write_record("deployments", rec, time_extracted=extraction_time)
                 counter.increment()
 
