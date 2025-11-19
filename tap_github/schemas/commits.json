@@ -307,7 +307,12 @@
           "description": "The committer's id"
         }
       }
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
     }
-  },
-  "additionalProperties": false
+  }
 }

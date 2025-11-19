@@ -708,7 +708,10 @@
           ]
         },
         "user": {
-          "type": ["null", "object"],
+          "type": [
+            "null",
+            "object"
+          ],
           "properties": {
             "login": {
               "type": [
@@ -821,7 +824,10 @@
           }
         },
         "repo": {
-          "type": ["null","object"],
+          "type": [
+            "null",
+            "object"
+          ],
           "properties": {
             "id": {
               "type": [
@@ -1345,7 +1351,10 @@
               ]
             },
             "license": {
-              "type": ["null","object"],
+              "type": [
+                "null",
+                "object"
+              ],
               "properties": {
                 "key": {
                   "type": [
@@ -2099,7 +2108,10 @@
               ]
             },
             "license": {
-              "type": ["null","object"],
+              "type": [
+                "null",
+                "object"
+              ],
               "properties": {
                 "key": {
                   "type": [
@@ -2304,6 +2316,12 @@
         "null",
         "string"
       ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
     }
   }
 }

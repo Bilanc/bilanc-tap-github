@@ -1,90 +1,96 @@
 {
-    "type": [
+  "type": [
+    "null",
+    "object"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "_sdc_repository": {
+      "type": [
+        "string"
+      ]
+    },
+    "pr_id": {
+      "type": [
+        "string"
+      ]
+    },
+    "id": {
+      "type": [
+        "string"
+      ]
+    },
+    "pr_number": {
+      "type": [
         "null",
-        "object"
-    ],
-    "additionalProperties": false,
-    "properties": {
-        "_sdc_repository": {
-            "type": [
-                "string"
-            ]
-        },
-        "pr_id": {
-            "type": [
-                "string"
-            ]
-        },
-        "id": {
-            "type": [
-                "string"
-            ]
-        },
-        "pr_number": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "sha": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "filename": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "status": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "additions": {
-            "type": [
-                "null",
-                "integer"
-            ]
-        },
-        "deletions": {
-            "type": [
-                "null",
-                "integer"
-            ]
-        },
-        "changes": {
-            "type": [
-                "null",
-                "integer"
-            ]
-        },
-        "blob_url": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "raw_url": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "contents_url": {
-            "type": [
-                "null",
-                "string"
-            ]
-        },
-        "patch": {
-            "type": [
-                "null",
-                "string"
-            ]
-        }
+        "string"
+      ]
+    },
+    "sha": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "filename": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "status": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "additions": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "deletions": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "changes": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "blob_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "raw_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "contents_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "patch": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
     }
+  }
 }
