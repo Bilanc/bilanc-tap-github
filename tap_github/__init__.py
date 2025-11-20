@@ -390,6 +390,7 @@ def generate_pr_commit_schema(commit_schema):
     pr_commit_schema["properties"]["pr_number"] = {"type": ["null", "integer"]}
     pr_commit_schema["properties"]["pr_id"] = {"type": ["null", "string"]}
     pr_commit_schema["properties"]["id"] = {"type": ["null", "string"]}
+    pr_commit_schema["inserted_at"] = {"type": ["string"], "format": "date-time"}
     pr_commit_schema["properties"]["files"] = {
         "type": ["array", "null"],
         "items": {
@@ -1418,10 +1419,10 @@ def get_pull_request_details(pull_request, schemas, repo_path, state, mdata):
     pr_response = authed_get("pull_request_details", pull_request["url"])
     pr = pr_response.json()
     pr["_sdc_repository"] = repo_path
+    add_insert_timestamp(pr)
     # transform and write release record
     with singer.Transformer() as transformer:
         rec = transformer.transform(pr, schemas, metadata=metadata.to_map(mdata))
-    add_insert_timestamp(rec)
     return rec
 
 
@@ -1433,6 +1434,7 @@ def get_reviews_for_pr(pr_number, schema, repo_path, state, mdata):
         reviews = response.json()
         for review in reviews:
             review["_sdc_repository"] = repo_path
+            add_insert_timestamp(review)
             with singer.Transformer() as transformer:
                 rec = transformer.transform(
                     review, schema, metadata=metadata.to_map(mdata)
@@ -1452,6 +1454,7 @@ def get_review_comments_for_pr(pr_number, schema, repo_path, state, mdata):
         review_comments = response.json()
         for comment in review_comments:
             comment["_sdc_repository"] = repo_path
+            add_insert_timestamp(comment)
             with singer.Transformer() as transformer:
                 rec = transformer.transform(
                     comment, schema, metadata=metadata.to_map(mdata)
@@ -1476,6 +1479,7 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
             commit["pr_id"] = pr_id
             sha: str = commit["sha"]
             commit["id"] = "{}-{}".format(pr_id, sha)
+            add_insert_timestamp(commit)
             for response in authed_get_all_pages(
                 "commit_details",
                 "https://api.github.com/repos/{}/commits/{}".format(repo_path, sha),
@@ -1509,6 +1513,7 @@ def get_pull_request_files(pr_number, pr_id, schema, repo_path, state, mdata):
             file["pr_number"] = pr_number
             file["pr_id"] = pr_id
             file["id"] = "{}-{}".format(pr_id, file["sha"])
+            add_insert_timestamp(file)
             with singer.Transformer() as transformer:
                 rec = transformer.transform(
                     file, schema, metadata=metadata.to_map(mdata)
