@@ -2,71 +2,143 @@
   "type": "object",
   "properties": {
     "login": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "id": {
-      "type": "integer"
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "node_id": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "avatar_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "gravatar_id": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "html_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "followers_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "following_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "gists_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "starred_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "subscriptions_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "organizations_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "repos_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "events_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "received_events_url": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uri"
     },
     "type": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "site_admin": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "org_id": {
       "type": [
-        "null",
-        "integer"
+        "integer",
+        "null"
       ]
     },
     "org_name": {
       "type": [
-        "null",
-        "string"
+        "string",
+        "null"
       ]
     },
-    "inserted_at": {"type": ["string"], "format": "date-time"}
+    "inserted_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
   }
 }
