@@ -133,6 +133,18 @@
         "null"
       ]
     },
+    "name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "email": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
     "inserted_at": {
       "type": [
         "string",
