@@ -51,6 +51,7 @@ KEY_PROPERTIES = {
     "commit_comments": ["id"],
     "organizations": ["id"],
     "organization_members": ["id"],
+    "organization_outside_collaborators": ["id"],
     "projects": ["id"],
     "project_columns": ["id"],
     "project_cards": ["id"],
@@ -701,6 +702,45 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
                     time_extracted=extraction_time,
                 )
 
+        if schemas.get("organization_outside_collaborators"):
+            for org_outside_collab_rec in get_all_organization_outside_collaborators(
+                rec,
+                schemas["organization_outside_collaborators"],
+                repo_path,
+                state,
+                mdata["organization_outside_collaborators"],
+            ):
+                singer.write_record(
+                    "organization_outside_collaborators",
+                    org_outside_collab_rec,
+                    time_extracted=extraction_time,
+                )
+    return state
+
+def get_all_organization_outside_collaborators(org, schemas, repo_path, state, mdata):
+    with metrics.record_counter("organization_outside_collaborators") as counter:
+        for response in authed_get_all_pages(
+            "organization_outside_collaborators",
+            "https://api.github.com/orgs/{}/outside_collaborators?sort=created_at&direction=desc&per_page=100".format(
+                org["id"]
+            ),
+        ):
+            organization_outside_collaborators = response.json()
+            for r in organization_outside_collaborators:
+                r["org_id"] = org["id"]
+                r["org_name"] = org.get("login", "")
+                user_rec = authed_get("organization_members_users", r["url"])
+                user_json = user_rec.json()
+                r["name"] = user_json.get("name")
+                r["email"] = user_json.get("email")
+                # transform and write release record
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        r, schemas, metadata=metadata.to_map(mdata)
+                    )
+                add_insert_timestamp(rec)
+                counter.increment()
+                yield rec
     return state
 
 
@@ -708,7 +748,7 @@ def get_all_organization_members(org, schemas, repo_path, state, mdata):
     with metrics.record_counter("organization_members") as counter:
         for response in authed_get_all_pages(
             "organization_members",
-            "https://api.github.com/orgs/{}/members?sort=created_at&direction=desc".format(
+            "https://api.github.com/orgs/{}/members?sort=created_at&direction=desc&per_page=100".format(
                 org["id"]
             ),
         ):
@@ -1927,7 +1967,7 @@ SUB_STREAMS = {
     ],
     "projects": ["project_cards", "project_columns"],
     "teams": ["team_members", "team_memberships"],
-    "organizations": ["organization_members"],
+    "organizations": ["organization_members", "organization_outside_collaborators"],
 }
 
 
