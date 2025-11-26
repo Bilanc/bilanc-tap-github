@@ -382,7 +382,7 @@ def authed_get_all_pages(source, url, headers={}, skip_422=False):
     while True:
         r = authed_get(source, url, headers, skip_422)
         yield r
-        if "next" in r.links:
+        if r and "next" in r.links:
             url = r.links["next"]["url"]
         else:
             break
