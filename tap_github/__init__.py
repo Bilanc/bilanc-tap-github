@@ -268,6 +268,10 @@ def get_reset_time_and_remaining_calls(
     response, message="Reset time will be reached in {} seconds. Remaining {} calls"
 ):
     try:
+        # Gracefully handle this to avoid KeyErrors when headers are not present
+        if not response.headers.get("X-RateLimit-Reset") or not response.headers.get("X-RateLimit-Remaining"):
+            return None, None
+
         reset_time = int(response.headers["X-RateLimit-Reset"])
         remaining = int(response.headers["X-RateLimit-Remaining"])
         seconds_to_sleep = calculate_seconds(reset_time)
@@ -347,7 +351,7 @@ def refresh_token_if_expired():
     max_tries=10,
     factor=2,
 )
-def authed_get(source, url, headers={}):
+def authed_get(source, url, headers={}, skip_422=False):
     refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
         session.headers.update(headers)
@@ -355,6 +359,8 @@ def authed_get(source, url, headers={}):
         resp = session.request(method="get", url=url, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
+            if skip_422 and resp.status_code == 422:
+                return None
             _ = get_reset_time_and_remaining_calls(
                 resp,
                 message=f"[Request Status {resp.status_code}] Reset time was going to be reached in"
@@ -372,11 +378,11 @@ def authed_get(source, url, headers={}):
         return resp
 
 
-def authed_get_all_pages(source, url, headers={}):
+def authed_get_all_pages(source, url, headers={}, skip_422=False):
     while True:
-        r = authed_get(source, url, headers)
+        r = authed_get(source, url, headers, skip_422)
         yield r
-        if "next" in r.links:
+        if r and "next" in r.links:
             url = r.links["next"]["url"]
         else:
             break
@@ -1523,7 +1529,10 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
             for response in authed_get_all_pages(
                 "commit_details",
                 "https://api.github.com/repos/{}/commits/{}".format(repo_path, sha),
+                skip_422=True,
             ):
+                if not response:
+                    continue
                 commit_details = response.json()
                 commit["files"] = commit_details.get("files")
                 commit["stats"] = commit_details.get("stats")
