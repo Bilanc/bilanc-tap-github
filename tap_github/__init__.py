@@ -1802,7 +1802,7 @@ def get_all_deployments(schema, repo_path, state, mdata, _start_date):
 
 def get_all_workflows(schemas, repo_path, state, mdata, start_date):
     """
-    https://developer.github.com/v3/activity/starring/#list-stargazers
+    https://developer.github.com/v3/actions/workflows/#list-workflows
     """
 
     workflows_headers = {"Accept": "application/vnd.github.v3.star+json"}
@@ -1846,7 +1846,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                         workflow, schemas["workflows"], metadata=metadata.to_map(mdata["workflows"])
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("stargazers", rec, time_extracted=extraction_time)
+                singer.write_record("workflows", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -1854,7 +1854,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
 
 def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata, start_date):
     bookmark_value = get_bookmark(
-        state, repo_path, "pull_requests", "since", start_date
+        state, repo_path, "workflow_runs", "since", start_date
     )
     if bookmark_value:
         bookmark_time = singer.utils.strptime_to_utc(bookmark_value)
