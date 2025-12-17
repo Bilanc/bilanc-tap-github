@@ -1,0 +1,246 @@
+{
+  "properties": {
+    "id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "node_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_branch": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_sha": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "path": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "display_title": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "run_number": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "event": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "status": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "conclusion": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "workflow_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "check_suite_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "check_suite_node_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "html_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "pull_request_ids": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "string"
+        ]
+      }
+    },
+    "created_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "actor_login": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "actor_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "actor_type": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "run_attempt": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "referenced_workflows": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {}
+    },
+    "run_started_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "jobs_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "logs_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "check_suite_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "artifacts_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "cancel_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "rerun_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "previous_attempt_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "workflow_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_commit_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_commit_message": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_commit_timestamp": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "_sdc_repository": {
+      "type": [
+        "string"
+      ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
+    }
+  },
+  "type": [
+    "null",
+    "object"
+  ]
+}

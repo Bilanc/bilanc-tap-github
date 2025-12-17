@@ -60,6 +60,9 @@ KEY_PROPERTIES = {
     "team_members": ["id", "team_slug"],
     "team_memberships": ["url"],
     "deployments": ["id"],
+    "workflows": ["id"],
+    "workflow_runs": ["id"],
+    "workflow_run_jobs": ["id"],
 }
 
 VISITED_ORGS_IDS = set()
@@ -208,7 +211,7 @@ def get_bookmark(state, repo, stream_name, bookmark_key, start_date):
     return None
 
 
-def raise_for_error(resp, source):
+def raise_for_error(resp, source, remaining):
     error_code = resp.status_code
     try:
         response_json = resp.json()
@@ -235,7 +238,12 @@ def raise_for_error(resp, source):
         return None
 
     if error_code == 403:
-        raise AuthException(f"[Error Code] {error_code}: {response_json}")
+        if remaining == 0:
+            raise APIRateLimitExceededError(
+                "API rate limit exceeded. Please wait and try again later."
+            )
+        # don't raise a AuthException for 403 errors that are not rate limit related
+        return None
 
     if 500 <= error_code < 600:
         raise RetriableServerError(resp.text)
@@ -342,7 +350,6 @@ def refresh_token_if_expired():
         APIRateLimitExceededError,
         RetriableServerError,
         InternalServerError,
-        AuthException,
     ),
     max_tries=10,
     factor=2,
@@ -355,7 +362,7 @@ def authed_get(source, url, headers={}):
         resp = session.request(method="get", url=url, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
-            _ = get_reset_time_and_remaining_calls(
+            reset_time, remaining = get_reset_time_and_remaining_calls(
                 resp,
                 message=f"[Request Status {resp.status_code}] Reset time was going to be reached in"
                 + " {} seconds.  Remaining {} calls",
@@ -364,7 +371,7 @@ def authed_get(source, url, headers={}):
             if resp.status_code == 403:
                 rate_throttling(resp)
             # retry
-            raise_for_error(resp, source)
+            raise_for_error(resp, source, remaining)
         timer.tags[metrics.Tag.http_status_code] = resp.status_code
         if resp.status_code in [404, 409]:
             # return an empty response body since we're not raising a NotFoundException
@@ -1793,6 +1800,143 @@ def get_all_deployments(schema, repo_path, state, mdata, _start_date):
     return state
 
 
+def get_all_workflows(schemas, repo_path, state, mdata, start_date):
+    """
+    https://developer.github.com/v3/activity/starring/#list-stargazers
+    """
+
+    workflows_headers = {"Accept": "application/vnd.github.v3.star+json"}
+
+    with metrics.record_counter("workflows") as counter:
+        for response in authed_get_all_pages(
+            "workflows",
+            "https://api.github.com/repos/{}/actions/workflows?sort=updated&direction=desc&per_page=100".format(repo_path),
+            workflows_headers,
+        ):
+            if not response:
+                return state
+            
+            workflows = response.json()
+            extraction_time = singer.utils.now()
+            for workflow in workflows["workflows"]:
+                workflow_id = workflow["id"]
+                workflow["_sdc_repository"] = repo_path
+                if schemas.get("workflow_runs"):
+                    for workflow_run in get_workflow_runs_for_workflow(
+                        workflow_id,
+                        schemas,
+                        repo_path,
+                        state,
+                        mdata,
+                        start_date,
+                    ):
+                        singer.write_record(
+                            "workflow_runs",
+                            workflow_run,
+                            time_extracted=extraction_time,
+                        )
+                        singer.write_bookmark(
+                            state,
+                            repo_path,
+                            "workflow_runs",
+                            {"since": singer.utils.strftime(extraction_time)},
+                        )
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        workflow, schemas["workflows"], metadata=metadata.to_map(mdata["workflows"])
+                    )
+                add_insert_timestamp(rec)
+                singer.write_record("stargazers", rec, time_extracted=extraction_time)
+                counter.increment()
+
+    return state
+
+
+def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata, start_date):
+    bookmark_value = get_bookmark(
+        state, repo_path, "pull_requests", "since", start_date
+    )
+    if bookmark_value:
+        bookmark_time = singer.utils.strptime_to_utc(bookmark_value)
+    else:
+        bookmark_time = 0
+    with metrics.record_counter("workflow_runs") as counter:
+        for response in authed_get_all_pages(
+            "workflow_runs",
+            "https://api.github.com/repos/{}/actions/workflows/{}/runs?sort=updated&direction=desc&per_page=100".format(
+                repo_path, workflow_id
+            ),
+        ):
+            workflow_runs = response.json()
+            for run in workflow_runs["workflow_runs"]:
+                if (
+                    bookmark_time
+                    and singer.utils.strptime_to_utc(run.get("updated_at"))
+                    < bookmark_time
+                    ):
+                    return state
+                run_id = run["id"]
+                if schemas.get("workflow_run_jobs"):
+                    for job in get_jobs_for_workflow_run(
+                        run_id,
+                        schemas["workflow_run_jobs"],
+                        repo_path,
+                        state,
+                        mdata["workflow_run_jobs"],
+                    ):
+                        singer.write_record(
+                            "workflow_run_jobs", job, time_extracted=singer.utils.now()
+                        )
+                        singer.write_bookmark(
+                            state,
+                            repo_path,
+                            "workflow_run_jobs",
+                            {"since": singer.utils.strftime(singer.utils.now())},
+                        )
+                run["_sdc_repository"] = repo_path
+                run["actor_id"] = run.get("actor", {}).get("id")
+                run["actor_login"] = run.get("actor", {}).get("login")
+                run["actor_type"] = run.get("actor", {}).get("type")
+                run["pull_request_ids"] = [pr["id"] for pr in run.get("pull_requests", []) if pr.get("id")]
+                run["head_commit_id"] = run.get("head_commit", {}).get("id")
+                run["head_commit_message"] = run.get("head_commit", {}).get("message")
+                run["head_commit_timestamp"] = run.get("head_commit", {}).get("timestamp")
+                add_insert_timestamp(run)
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        run, schemas["workflow_runs"], metadata=metadata.to_map(mdata["workflow_runs"])
+                    )
+                yield rec
+                counter.increment()
+
+        return state
+
+def get_jobs_for_workflow_run(run_id, schema, repo_path, state, mdata):
+    with metrics.record_counter("workflow_run_jobs") as counter:
+        for response in authed_get_all_pages(
+            "workflow_run_jobs",
+            "https://api.github.com/repos/{}/actions/runs/{}/jobs?sort=updated&direction=desc&per_page=100".format(
+                repo_path, run_id
+            ),
+        ):
+            jobs = response.json()
+            for job in jobs["jobs"]:
+                job["_sdc_repository"] = repo_path
+                job["actor_id"] = job.get("actor", {}).get("id")
+                job["actor_login"] = job.get("actor", {}).get("login")
+                job["actor_type"] = job.get("actor", {}).get("type")
+                add_insert_timestamp(job)
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        job, schema, metadata=metadata.to_map(mdata)
+                    )
+                yield rec
+
+                counter.increment()
+
+        return state
+
+
 def get_selected_streams(catalog):
     """
     Gets selected streams.  Checks schema's 'selected'
@@ -1955,6 +2099,7 @@ SYNC_FUNCTIONS = {
     "teams": get_all_teams,
     "organizations": get_all_organizations,
     "deployments": get_all_deployments,
+    "workflows": get_all_workflows,
 }
 
 SUB_STREAMS = {
@@ -1968,6 +2113,7 @@ SUB_STREAMS = {
     "projects": ["project_cards", "project_columns"],
     "teams": ["team_members", "team_memberships"],
     "organizations": ["organization_members", "organization_outside_collaborators"],
+    "workflows": ["workflow_runs", "workflow_run_jobs"],
 }
 
 

@@ -1,0 +1,206 @@
+{
+  "properties": {
+    "id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "run_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "workflow_name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_branch": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "run_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "run_attempt": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "node_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "head_sha": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "html_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "status": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "conclusion": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "steps": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "conclusion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "number": {
+            "type": [
+              "null",
+              "integer"
+            ]
+          },
+          "started_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "check_run_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "labels": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "runner_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "runner_name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "runner_group_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "runner_group_name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "_sdc_repository": {
+      "type": [
+        "string"
+      ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
+    }
+  },
+  "type": [
+    "null",
+    "object"
+  ]
+}
