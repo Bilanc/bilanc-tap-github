@@ -1805,7 +1805,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
     https://developer.github.com/v3/actions/workflows/#list-workflows
     """
 
-    workflows_headers = {"Accept": "application/vnd.github.v3.star+json"}
+    workflows_headers = {"Accept": "application/vnd.github.v3.json"}
 
     with metrics.record_counter("workflows") as counter:
         for response in authed_get_all_pages(
