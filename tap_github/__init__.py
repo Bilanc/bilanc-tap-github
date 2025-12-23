@@ -63,6 +63,7 @@ KEY_PROPERTIES = {
     "workflows": ["id"],
     "workflow_runs": ["id"],
     "workflow_run_jobs": ["id"],
+    "artifacts": ["id"],
 }
 
 VISITED_ORGS_IDS = set()
@@ -1860,12 +1861,15 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
         bookmark_time = singer.utils.strptime_to_utc(bookmark_value)
     else:
         bookmark_time = 0
+    
+    workflow_runs_headers = {"Accept": "application/vnd.github.v3.json"}
     with metrics.record_counter("workflow_runs") as counter:
         for response in authed_get_all_pages(
             "workflow_runs",
             "https://api.github.com/repos/{}/actions/workflows/{}/runs?sort=updated&direction=desc&per_page=100".format(
                 repo_path, workflow_id
             ),
+            workflow_runs_headers,
         ):
             workflow_runs = response.json()
             for run in workflow_runs["workflow_runs"]:
@@ -1901,6 +1905,9 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
                 run["head_commit_id"] = run.get("head_commit", {}).get("id")
                 run["head_commit_message"] = run.get("head_commit", {}).get("message")
                 run["head_commit_timestamp"] = run.get("head_commit", {}).get("timestamp")
+                timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers,)
+                timing_json = timing.json()
+                run["run_duration_ms"] = timing_json.get("run_duration_ms")
                 add_insert_timestamp(run)
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
@@ -1935,6 +1942,44 @@ def get_jobs_for_workflow_run(run_id, schema, repo_path, state, mdata):
                 counter.increment()
 
         return state
+    
+def get_all_artifacts(schema, repo_path, state, mdata, start_date):
+    """
+    https://docs.github.com/en/rest/actions/artifacts?apiVersion=2022-11-28#list-artifacts-for-a-repository
+    """
+
+    artifacts_headers = {"Accept": "application/vnd.github.v3+json"}
+
+    bookmark_value = get_bookmark(
+        state, repo_path, "artifacts", "since", start_date
+    )
+    if bookmark_value:
+        bookmark_time = singer.utils.strptime_to_utc(bookmark_value)
+    else:
+        bookmark_time = 0
+
+    with metrics.record_counter("artifacts") as counter:
+        for response in authed_get_all_pages(
+            "artifacts",
+            "https://api.github.com/repos/{}/actions/artifacts?page_len=100".format(repo_path),
+            artifacts_headers,
+        ):
+            artifacts = response.json()
+            extraction_time = singer.utils.now()
+            for artifact in artifacts.get("artifacts", []):
+                if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
+                    return state
+                
+                artifact["_sdc_repository"] = repo_path
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        artifact, schema, metadata=metadata.to_map(mdata)
+                    )
+                add_insert_timestamp(rec)
+                singer.write_record("artifacts", rec, time_extracted=extraction_time)
+                counter.increment()
+
+    return state
 
 
 def get_selected_streams(catalog):
@@ -2100,6 +2145,7 @@ SYNC_FUNCTIONS = {
     "organizations": get_all_organizations,
     "deployments": get_all_deployments,
     "workflows": get_all_workflows,
+    "artifacts": get_all_artifacts,
 }
 
 SUB_STREAMS = {
