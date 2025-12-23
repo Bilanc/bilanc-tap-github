@@ -1908,6 +1908,9 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
                 timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers,)
                 timing_json = timing.json()
                 run["run_duration_ms"] = timing_json.get("run_duration_ms")
+                run["ubuntu_run_duration_ms"] = timing_json.get("billable", {}).get("UBUNTU", {}).get("total_ms")
+                run["windows_run_duration_ms"] = timing_json.get("billable", {}).get("WINDOWS", {}).get("total_ms")
+                run["macos_run_duration_ms"] = timing_json.get("billable", {}).get("MACOS", {}).get("total_ms")
                 add_insert_timestamp(run)
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
@@ -1971,6 +1974,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
                     return state
                 
                 artifact["_sdc_repository"] = repo_path
+                artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
                         artifact, schema, metadata=metadata.to_map(mdata)

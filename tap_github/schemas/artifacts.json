@@ -69,6 +69,12 @@
       ],
       "format": "date-time"
     },
+    "workflow_run_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
     "workflow_run": {
       "type": [
         "null",

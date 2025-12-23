@@ -243,6 +243,24 @@
         "null",
         "integer"
       ]
+    },
+    "ubuntu_run_duration_ms": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "windows_run_duration_ms": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "macos_run_duration_ms": {
+      "type": [
+        "null",
+        "integer"
+      ]
     }
   },
   "type": [
