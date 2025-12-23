@@ -1,0 +1,132 @@
+{
+  "properties": {
+    "id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "node_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "size_in_bytes": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "archive_download_url": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "expired": {
+      "type": [
+        "null",
+        "boolean"
+      ]
+    },
+    "digest": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "created_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "workflow_run_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "workflow_run": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "repository_id": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "head_repository_id": {
+          "type": [
+            "null",
+            "integer"
+          ]
+        },
+        "head_branch": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "head_sha": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      }
+    },
+    "_sdc_repository": {
+      "type": [
+        "string"
+      ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
+    }
+  },
+  "type": [
+    "null",
+    "object"
+  ]
+}
