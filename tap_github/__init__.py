@@ -1905,7 +1905,7 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
                 run["head_commit_id"] = run.get("head_commit", {}).get("id")
                 run["head_commit_message"] = run.get("head_commit", {}).get("message")
                 run["head_commit_timestamp"] = run.get("head_commit", {}).get("timestamp")
-                timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers,)
+                timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers)
                 timing_json = timing.json()
                 run["run_duration_ms"] = timing_json.get("run_duration_ms")
                 run["ubuntu_run_duration_ms"] = timing_json.get("billable", {}).get("UBUNTU", {}).get("total_ms")
