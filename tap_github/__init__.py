@@ -399,7 +399,7 @@ def generate_pr_commit_schema(commit_schema):
     pr_commit_schema["properties"]["pr_number"] = {"type": ["null", "integer"]}
     pr_commit_schema["properties"]["pr_id"] = {"type": ["null", "string"]}
     pr_commit_schema["properties"]["id"] = {"type": ["null", "string"]}
-    pr_commit_schema["inserted_at"] = {"type": ["string"], "format": "date-time"}
+    pr_commit_schema["properties"]["inserted_at"] = {"type": ["string"], "format": "date-time"}
     pr_commit_schema["properties"]["files"] = {
         "type": ["array", "null"],
         "items": {
@@ -1647,6 +1647,9 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
             ),
         ):
             commits = response.json()
+            if not isinstance(commits, list):
+                logger.warning("Expected list of commits but got %s, skipping", type(commits).__name__)
+                continue
             extraction_time = singer.utils.now()
             for commit in commits:
                 commit["_sdc_repository"] = repo_path
