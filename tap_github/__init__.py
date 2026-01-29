@@ -65,7 +65,8 @@ KEY_PROPERTIES = {
     "workflow_runs": ["id"],
     "workflow_run_jobs": ["id"],
     "artifacts": ["id"],
-    "copilot_user_metrics_1_day": ["enterprise_slug", "usage_date", "user_id"],
+    # Copilot metrics are day-based and emitted per-user per-day.
+    "copilot_user_metrics_1_day": ["enterprise_slug", "day", "user_id"],
 }
 
 VISITED_ORGS_IDS = set()
@@ -745,11 +746,7 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
 
                 record = {
                     "enterprise_slug": enterprise_slug,
-                    "report_time": report_metadata.get("report_time"),
-                    "report_start_day": report_metadata.get("report_start_day"),
-                    "report_end_day": report_metadata.get("report_end_day"),
                     "day": report_record.get("day"),
-                    "usage_date": report_record.get("usage_date"),
                     "enterprise_id": report_record.get("enterprise_id"),
                     "user_login": report_record.get("user_login"),
                     "user_id": report_record.get("user_id"),
@@ -773,7 +770,6 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     "totals_by_language_feature": report_record.get("totals_by_language_feature"),
                     "totals_by_language_model": report_record.get("totals_by_language_model"),
                     "totals_by_model_feature": report_record.get("totals_by_model_feature"),
-                    "user": report_record.get("user"),
                 }
                 add_insert_timestamp(record)
 

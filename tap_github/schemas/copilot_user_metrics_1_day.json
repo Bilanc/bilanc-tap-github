@@ -10,35 +10,7 @@
         "string"
       ]
     },
-    "report_start_day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
-    "report_end_day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
     "day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
-    "report_time": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date-time"
-    },
-    "usage_date": {
       "type": [
         "null",
         "string"
@@ -176,12 +148,6 @@
           "object"
         ]
       }
-    },
-    "user": {
-      "type": [
-        "null",
-        "object"
-      ]
     },
     "inserted_at": {
       "type": [
