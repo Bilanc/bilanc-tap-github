@@ -629,7 +629,11 @@ def verify_access_for_repo(config):
 
 def do_discover(config):
     # Copilot-only jobs (enterprise metrics) are not repository-scoped.
-    if config.get("repository") or config.get("repositories"):
+    has_repo_config = bool(config.get("repository")) or any(
+        isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
+        for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
+    )
+    if has_repo_config:
         verify_access_for_repo(config)
     catalog = get_catalog()
     # dump catalog
@@ -2372,7 +2376,11 @@ def do_sync(config, state, catalog):
     # Copilot enterprise jobs are not repository-scoped. If repositories are not
     # provided, run the normal sync loop once with `repo=None`. Hotglue can still
     # control which streams are selected via the catalog/properties.
-    if not config.get("repository") and not config.get("repositories"):
+    has_repo_config = bool(config.get("repository")) or any(
+        isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
+        for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
+    )
+    if not has_repo_config:
         if not enterprise_slug:
             raise ValueError("Config does not contain 'repository' or 'repositories' keys or enterprise_slug.")
         repositories = [None]
