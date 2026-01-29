@@ -8,6 +8,7 @@ import singer
 import jwt
 import math
 import argparse
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from datetime import datetime, timedelta
 import pytz
 from singer import bookmarks, metrics, metadata
@@ -64,9 +65,11 @@ KEY_PROPERTIES = {
     "workflow_runs": ["id"],
     "workflow_run_jobs": ["id"],
     "artifacts": ["id"],
+    "copilot_user_metrics_1_day": ["enterprise_slug", "usage_date", "user_id"],
 }
 
 VISITED_ORGS_IDS = set()
+COPILOT_USER_METRICS_STREAM = "copilot_user_metrics_1_day"
 
 
 class GithubException(Exception):
@@ -231,6 +234,15 @@ def raise_for_error(resp, source, remaining):
         details = ERROR_CODE_EXCEPTION_MAPPING.get(error_code).get("message")
         if source == "teams":
             details += " or it is a personal account repository"
+
+        # For Copilot metrics 404 responses, use GitHub's message if present
+        # (otherwise fall back to the default mapped 404 message).
+        if source == COPILOT_USER_METRICS_STREAM:
+            custom_message = (
+                response_json.get("message") if isinstance(response_json, dict) else None
+            )
+            if custom_message:
+                details = custom_message
         message = "HTTP-error-code: 404, Error: {}. Please refer '{}' for more details.".format(
             details, response_json.get("documentation_url")
         )
@@ -302,6 +314,7 @@ access_token_expires_at = None
 refresh_token_expires_at = None
 config_path = None
 organization = None
+enterprise_slug = None
 is_nango_token = False
 
 
@@ -333,7 +346,6 @@ def refresh_token_if_expired():
                 f"Refreshed Nango access token, expires at {access_token_expires_at}"
             )
             session.headers["Authorization"] = "Bearer " + config["access_token"]
-            save_config(config)
         else:
             refresh_oauth_token(config)
 
@@ -374,7 +386,7 @@ def authed_get(source, url, headers={}):
             # retry
             raise_for_error(resp, source, remaining)
         timer.tags[metrics.Tag.http_status_code] = resp.status_code
-        if resp.status_code in [404, 409]:
+        if resp.status_code in [404, 409] and source != COPILOT_USER_METRICS_STREAM:
             # return an empty response body since we're not raising a NotFoundException
             resp._content = b"{}"  # pylint: disable=protected-access
         return resp
@@ -621,6 +633,172 @@ def do_discover(config):
     # dump catalog
     print(json.dumps(catalog, indent=2))
 
+
+def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_date):
+    if not enterprise_slug:
+        logger.info("Skipping Copilot metrics sync: enterprise_slug not configured.")
+        return _state
+
+    copilot_headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # Determine start day:
+    # - Prefer a per-enterprise Singer bookmark (last processed day + 1).
+    # - Otherwise fall back to configured start_date (RFC3339, as used elsewhere).
+    bookmark = bookmarks.get_bookmark(_state, enterprise_slug, COPILOT_USER_METRICS_STREAM)
+    last_day_value = bookmark.get("last_day") if bookmark else None
+
+    if last_day_value:
+        # Copilot bookmark is a day string (YYYY-MM-DD).
+        start_day_value = datetime.strptime(last_day_value, "%Y-%m-%d") + timedelta(days=1)
+    else:
+        start_day_value = singer.utils.strptime_to_utc(_start_date)
+
+    # GitHub's Copilot reports are requested per-day.
+    start_day = start_day_value.date()
+    # We intentionally attempt to fetch "today" on every run so that hourly
+    # schedules can pick up newly-available same-day Copilot report data.
+    end_day = datetime.utcnow().date()
+    if start_day > end_day:
+        logger.info("Copilot metrics sync is up to date through %s.", end_day)
+        return _state
+
+    # Walk day-by-day and emit records for each available report day.
+    latest_day_value = None
+    current_day = start_day
+
+    while current_day <= end_day:
+        report_day = current_day.strftime("%Y-%m-%d")
+        # Step 1: fetch report metadata; it contains one or more download links.
+        url = (
+            f"https://api.github.com/enterprises/{enterprise_slug}/copilot/metrics/"
+            f"reports/users-1-day?day={report_day}"
+        )
+        response = authed_get(COPILOT_USER_METRICS_STREAM, url, copilot_headers)
+        extraction_time = singer.utils.now()
+
+        if response.status_code != 200:
+            # 404 is expected when a report isn't available yet; skip forward.
+            if response.status_code == 404:
+                message = None
+                try:
+                    message = response.json().get("message")
+                except Exception:
+                    message = None
+                logger.info(
+                    "Copilot report not available for %s; skipping. (%s)",
+                    report_day,
+                    message or "no details",
+                )
+                current_day += timedelta(days=1)
+                continue
+
+            logger.info(
+                "Copilot report metadata request for %s failed with HTTP %s; stopping.",
+                report_day,
+                response.status_code,
+            )
+            break
+
+        # Step 2: parse metadata JSON and extract NDJSON download links.
+        try:
+            report_metadata = response.json()
+            raw_links = report_metadata.get("download_links") or []
+        except Exception:
+            logger.warning("Unable to parse Copilot report metadata response.")
+            break
+
+        download_links = [link for link in raw_links if isinstance(link, str) and link]
+        if not download_links:
+            logger.info(
+                "Copilot report metadata returned no download links for %s.",
+                report_day,
+            )
+            break
+
+        # Step 3: download each NDJSON file, parse line-by-line, and write records.
+        for download_url in download_links:
+            response = requests.get(download_url, timeout=get_request_timeout())
+            response.raise_for_status()
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                try:
+                    report_record = json.loads(stripped)
+                except JSONDecodeError:
+                    logger.warning("Skipping invalid Copilot report line.")
+                    continue
+                if not isinstance(report_record, dict):
+                    continue
+
+
+                record = {
+                    "enterprise_slug": enterprise_slug,
+                    "report_time": report_metadata.get("report_time"),
+                    "report_start_day": report_metadata.get("report_start_day"),
+                    "report_end_day": report_metadata.get("report_end_day"),
+                    "day": report_record.get("day"),
+                    "usage_date": report_record.get("usage_date"),
+                    "enterprise_id": report_record.get("enterprise_id"),
+                    "user_login": report_record.get("user_login"),
+                    "user_id": report_record.get("user_id"),
+                    "user_initiated_interaction_count": report_record.get(
+                        "user_initiated_interaction_count"
+                    ),
+                    "code_generation_activity_count": report_record.get(
+                        "code_generation_activity_count"
+                    ),
+                    "code_acceptance_activity_count": report_record.get(
+                        "code_acceptance_activity_count"
+                    ),
+                    "loc_suggested_to_add_sum": report_record.get("loc_suggested_to_add_sum"),
+                    "loc_suggested_to_delete_sum": report_record.get("loc_suggested_to_delete_sum"),
+                    "loc_added_sum": report_record.get("loc_added_sum"),
+                    "loc_deleted_sum": report_record.get("loc_deleted_sum"),
+                    "used_agent": report_record.get("used_agent"),
+                    "used_chat": report_record.get("used_chat"),
+                    "totals_by_ide": report_record.get("totals_by_ide"),
+                    "totals_by_feature": report_record.get("totals_by_feature"),
+                    "totals_by_language_feature": report_record.get("totals_by_language_feature"),
+                    "totals_by_language_model": report_record.get("totals_by_language_model"),
+                    "totals_by_model_feature": report_record.get("totals_by_model_feature"),
+                    "user": report_record.get("user"),
+                }
+                add_insert_timestamp(record)
+
+                with singer.Transformer() as transformer:
+                    rec = transformer.transform(
+                        record, schema, metadata=metadata.to_map(mdata)
+                    )
+                singer.write_record(
+                    COPILOT_USER_METRICS_STREAM,
+                    rec,
+                    time_extracted=extraction_time,
+                )
+
+        # Only advance the bookmark once we've successfully processed the day.
+        latest_day_value = current_day
+        current_day += timedelta(days=1)
+
+    if latest_day_value:
+        # The GitHub Copilot report endpoint is day-based. To attempt to support hourly
+        # re-sync within the current day, we only advance the bookmark through
+        # yesterday, even if today's report was successfully fetched.
+        bookmark_day_value = min(latest_day_value, end_day - timedelta(days=1))
+        # Persist a per-enterprise bookmark so future runs resume efficiently.
+        singer.write_bookmark(
+            _state,
+            enterprise_slug,
+            COPILOT_USER_METRICS_STREAM,
+            {"last_day": bookmark_day_value.strftime("%Y-%m-%d")},
+        )
+
+    return _state
 
 def get_all_teams(schemas, repo_path, state, mdata, _start_date):
     org = repo_path.split("/")[0]
@@ -2153,6 +2331,7 @@ SYNC_FUNCTIONS = {
     "deployments": get_all_deployments,
     "workflows": get_all_workflows,
     "artifacts": get_all_artifacts,
+    COPILOT_USER_METRICS_STREAM: get_copilot_user_metrics_1_day,
 }
 
 SUB_STREAMS = {
@@ -2167,6 +2346,12 @@ SUB_STREAMS = {
     "teams": ["team_members", "team_memberships"],
     "organizations": ["organization_members", "organization_outside_collaborators"],
     "workflows": ["workflow_runs", "workflow_run_jobs"],
+}
+
+RUN_ONCE_STREAMS = {
+    "teams",
+    "organizations",
+    COPILOT_USER_METRICS_STREAM,
 }
 
 
@@ -2199,7 +2384,7 @@ def do_sync(config, state, catalog):
             if not SYNC_FUNCTIONS.get(stream_id):
                 continue
 
-            if index > 0 and stream_id in ["teams", "organizations"]:
+            if index > 0 and stream_id in RUN_ONCE_STREAMS:
                 # these streams only need to be run once, not per repo
                 continue
 
@@ -2246,6 +2431,7 @@ def main():
     global refresh_token_expires_at
     global config_path
     global organization
+    global enterprise_slug
     global is_nango_token
 
     # Store config path for later use
@@ -2258,6 +2444,7 @@ def main():
 
     args.config["is_jwt_token"] = False
     organization = args.config["organization"]
+    enterprise_slug = args.config.get("enterprise_slug")
     access_token_expires_at = args.config.get("access_token_expires_at")
     refresh_token_expires_at = args.config.get("refresh_token_expires_at")
     nango_connection_id = args.config.get("nango_connection_id")
