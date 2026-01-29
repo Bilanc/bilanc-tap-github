@@ -2400,8 +2400,9 @@ def do_sync(config, state, catalog):
                 # these streams only need to be run once, not per repo
                 continue
 
-            # Copilot has its own connector and can run without a repository
-            if repo is None and not enterprise_slug:
+            # Copilot has its own connector and can run without a repository; all
+            # other streams are repository-scoped and must not run with repo=None.
+            if repo is None and (stream_id != COPILOT_USER_METRICS_STREAM or not enterprise_slug):
                 continue
 
             # if stream is selected, write schema and sync
