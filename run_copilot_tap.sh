@@ -21,7 +21,7 @@ import json
 import sys
 
 catalog = json.load(sys.stdin)
-target_stream = "copilot_user_metrics_28_day"
+target_stream = "copilot_user_metrics_1_day"
 
 streams = []
 for stream in catalog.get("streams", []):

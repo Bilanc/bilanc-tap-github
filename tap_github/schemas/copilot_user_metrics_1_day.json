@@ -1,0 +1,193 @@
+{
+  "type": [
+    "null",
+    "object"
+  ],
+  "properties": {
+    "enterprise_slug": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "report_start_day": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date"
+    },
+    "report_end_day": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date"
+    },
+    "day": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date"
+    },
+    "report_time": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "usage_date": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date"
+    },
+    "enterprise_id": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "user_login": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "user_id": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "user_initiated_interaction_count": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "code_generation_activity_count": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "code_acceptance_activity_count": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "loc_suggested_to_add_sum": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "loc_suggested_to_delete_sum": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "loc_added_sum": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "loc_deleted_sum": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "used_agent": {
+      "type": [
+        "null",
+        "boolean"
+      ]
+    },
+    "used_chat": {
+      "type": [
+        "null",
+        "boolean"
+      ]
+    },
+    "totals_by_ide": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "totals_by_feature": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "totals_by_language_feature": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "totals_by_language_model": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "totals_by_model_feature": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": [
+          "null",
+          "object"
+        ]
+      }
+    },
+    "user": {
+      "type": [
+        "null",
+        "object"
+      ]
+    },
+    "inserted_at": {
+      "type": [
+        "string"
+      ],
+      "format": "date-time"
+    }
+  }
+}
