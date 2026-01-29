@@ -628,7 +628,13 @@ def verify_access_for_repo(config):
 
 
 def do_discover(config):
-    verify_access_for_repo(config)
+    # Copilot-only jobs (enterprise metrics) are not repository-scoped.
+    has_repo_config = bool(config.get("repository")) or any(
+        isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
+        for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
+    )
+    if has_repo_config:
+        verify_access_for_repo(config)
     catalog = get_catalog()
     # dump catalog
     print(json.dumps(catalog, indent=2))
@@ -2367,14 +2373,28 @@ def do_sync(config, state, catalog):
     selected_stream_ids = get_selected_streams(catalog)
     validate_dependencies(selected_stream_ids)
 
-    repositories = extract_repos_from_config(config)
-
-    state = translate_state(state, catalog, repositories)
-    singer.write_state(state)
+    # Copilot enterprise jobs are not repository-scoped. If repositories are not
+    # provided, run the normal sync loop once with `repo=None`. Hotglue can still
+    # control which streams are selected via the catalog/properties.
+    has_repo_config = bool(config.get("repository")) or any(
+        isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
+        for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
+    )
+    if not has_repo_config:
+        if not enterprise_slug:
+            raise ValueError("Config does not contain 'repository' or 'repositories' keys or enterprise_slug.")
+        repositories = [None]
+        singer.write_state(state)
+    else:
+        repositories = extract_repos_from_config(config)
+        state = translate_state(state, catalog, repositories)
+        singer.write_state(state)
 
     # pylint: disable=too-many-nested-blocks
     for index, repo in enumerate(repositories):
-        logger.info("Starting sync of repository: %s", repo)
+        if repo:
+            logger.info("Starting sync of repository: %s", repo)
+
         for stream in catalog["streams"]:
             stream_id = stream["tap_stream_id"]
             stream_schema = stream["schema"]
@@ -2386,6 +2406,11 @@ def do_sync(config, state, catalog):
 
             if index > 0 and stream_id in RUN_ONCE_STREAMS:
                 # these streams only need to be run once, not per repo
+                continue
+
+            # Copilot has its own connector and can run without a repository; all
+            # other streams are repository-scoped and must not run with repo=None.
+            if repo is None and (stream_id != COPILOT_USER_METRICS_STREAM or not enterprise_slug):
                 continue
 
             # if stream is selected, write schema and sync
