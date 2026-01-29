@@ -736,36 +736,17 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                 if not isinstance(report_record, dict):
                     continue
 
-                usage_day = (
-                    report_record.get("day")
-                    or report_record.get("date")
-                    or report_record.get("usage_date")
-                )
-                report_start_day = (
-                    report_metadata.get("report_start_day")
-                    or report_metadata.get("report_day")
-                    or report_metadata.get("day")
-                    or report_metadata.get("report_end_day")
-                )
-                report_end_day = report_metadata.get("report_end_day") or report_start_day
-                user_profile = report_record.get("user", {})
-                user_profile = user_profile if isinstance(user_profile, dict) else {}
 
                 record = {
                     "enterprise_slug": enterprise_slug,
-                    "report_time": report_metadata.get("report_time")
-                    or report_metadata.get("generated_at"),
-                    "report_start_day": report_start_day,
-                    "report_end_day": report_end_day,
+                    "report_time": report_metadata.get("report_time"),
+                    "report_start_day": report_metadata.get("report_start_day"),
+                    "report_end_day": report_metadata.get("report_end_day"),
                     "day": report_record.get("day"),
-                    "usage_date": usage_day,
+                    "usage_date": report_record.get("usage_date"),
                     "enterprise_id": report_record.get("enterprise_id"),
-                    "user_login": report_record.get("user_login")
-                    or report_record.get("login")
-                    or user_profile.get("login"),
-                    "user_id": report_record.get("user_id")
-                    or report_record.get("id")
-                    or user_profile.get("id"),
+                    "user_login": report_record.get("user_login"),
+                    "user_id": report_record.get("user_id"),
                     "user_initiated_interaction_count": report_record.get(
                         "user_initiated_interaction_count"
                     ),
