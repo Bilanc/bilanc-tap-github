@@ -665,9 +665,9 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
 
     # GitHub's Copilot reports are requested per-day.
     start_day = start_day_value.date()
-    # We intentionally attempt to fetch "today" on every run so that hourly
-    # schedules can pick up newly-available same-day Copilot report data.
-    end_day = datetime.utcnow().date()
+    # GitHub can treat "today" as invalid/not-yet-available for Copilot reports.
+    # Fetch through yesterday to avoid hard-failing the job.
+    end_day = datetime.utcnow().date() - timedelta(days=1)
     if start_day > end_day:
         logger.info("Copilot metrics sync is up to date through %s.", end_day)
         return _state
