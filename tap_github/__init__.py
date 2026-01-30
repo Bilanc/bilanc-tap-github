@@ -66,7 +66,7 @@ KEY_PROPERTIES = {
     "workflow_run_jobs": ["id"],
     "artifacts": ["id"],
     # Copilot metrics are day-based and emitted per-user per-day.
-    "copilot_user_metrics_1_day": ["enterprise_slug", "day", "user_id"],
+    "copilot_user_metrics_1_day": ["enterprise_slug", "day", "user_login"],
 }
 
 VISITED_ORGS_IDS = set()
