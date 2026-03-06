@@ -700,6 +700,21 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
         extraction_time = singer.utils.now()
 
         if response.status_code != 200:
+            if response.status_code == 403:
+                message = None
+                try:
+                    message = response.json().get("message")
+                except Exception:
+                    message = None
+                logger.info(
+                    "Skipping Copilot metrics for %s '%s' after GitHub HTTP 403 on %s. (%s)",
+                    "enterprise" if enterprise_slug else "organization",
+                    enterprise_slug or organization,
+                    report_day,
+                    message or "no details",
+                )
+                break
+
             # 404 is expected when a report isn't available yet; skip forward.
             if response.status_code == 404:
                 message = None
@@ -727,13 +742,15 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
             report_metadata = response.json()
             raw_links = report_metadata.get("download_links") or []
         except Exception:
-            logger.warning("Unable to parse Copilot report metadata response.")
+            logger.warning(
+                "Unable to parse Copilot report metadata response; skipping Copilot metrics."
+            )
             break
 
         download_links = [link for link in raw_links if isinstance(link, str) and link]
         if not download_links:
             logger.info(
-                "Copilot report metadata returned no download links for %s.",
+                "Copilot report metadata returned no download links for %s; skipping Copilot metrics.",
                 report_day,
             )
             break
