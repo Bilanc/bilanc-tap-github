@@ -629,7 +629,9 @@ def verify_access_for_repo(config):
 
 
 def do_discover(config):
-    # Copilot-only jobs (enterprise metrics) are not repository-scoped.
+    # Enterprise Copilot jobs are not repository-scoped. Org Copilot metrics reuse
+    # the regular GitHub/VCS pathway and therefore should still include repository
+    # config in the connector payload.
     has_repo_config = bool(config.get("repository")) or any(
         isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
         for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
@@ -642,8 +644,11 @@ def do_discover(config):
 
 
 def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_date):
-    if not enterprise_slug:
-        logger.info("Skipping Copilot metrics sync: enterprise_slug not configured.")
+    copilot_bookmark_key = enterprise_slug or organization
+    if not copilot_bookmark_key:
+        logger.info(
+            "Skipping Copilot metrics sync: neither enterprise_slug nor organization configured."
+        )
         return _state
 
     copilot_headers = {
@@ -652,9 +657,11 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
     }
 
     # Determine start day:
-    # - Prefer a per-enterprise Singer bookmark (last processed day + 1).
+    # - Prefer a per-scope Singer bookmark (last processed day + 1).
     # - Otherwise fall back to configured start_date (RFC3339, as used elsewhere).
-    bookmark = bookmarks.get_bookmark(_state, enterprise_slug, COPILOT_USER_METRICS_STREAM)
+    bookmark = bookmarks.get_bookmark(
+        _state, copilot_bookmark_key, COPILOT_USER_METRICS_STREAM
+    )
     last_day_value = bookmark.get("last_day") if bookmark else None
 
     if last_day_value:
@@ -679,14 +686,35 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
     while current_day <= end_day:
         report_day = current_day.strftime("%Y-%m-%d")
         # Step 1: fetch report metadata; it contains one or more download links.
-        url = (
-            f"https://api.github.com/enterprises/{enterprise_slug}/copilot/metrics/"
-            f"reports/users-1-day?day={report_day}"
-        )
+        if enterprise_slug:
+            url = (
+                f"https://api.github.com/enterprises/{enterprise_slug}/copilot/metrics/"
+                f"reports/users-1-day?day={report_day}"
+            )
+        elif organization:
+            url = (
+                f"https://api.github.com/orgs/{organization}/copilot/metrics/"
+                f"reports/users-1-day?day={report_day}"
+            )
         response = authed_get(COPILOT_USER_METRICS_STREAM, url, copilot_headers)
         extraction_time = singer.utils.now()
 
         if response.status_code != 200:
+            if response.status_code == 403:
+                message = None
+                try:
+                    message = response.json().get("message")
+                except Exception:
+                    message = None
+                logger.info(
+                    "Skipping Copilot metrics for %s '%s' after GitHub HTTP 403 on %s. (%s)",
+                    "enterprise" if enterprise_slug else "organization",
+                    enterprise_slug or organization,
+                    report_day,
+                    message or "no details",
+                )
+                break
+
             # 404 is expected when a report isn't available yet; skip forward.
             if response.status_code == 404:
                 message = None
@@ -714,13 +742,15 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
             report_metadata = response.json()
             raw_links = report_metadata.get("download_links") or []
         except Exception:
-            logger.warning("Unable to parse Copilot report metadata response.")
+            logger.warning(
+                "Unable to parse Copilot report metadata response; skipping Copilot metrics."
+            )
             break
 
         download_links = [link for link in raw_links if isinstance(link, str) and link]
         if not download_links:
             logger.info(
-                "Copilot report metadata returned no download links for %s.",
+                "Copilot report metadata returned no download links for %s; skipping Copilot metrics.",
                 report_day,
             )
             break
@@ -745,6 +775,8 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
 
 
                 record = {
+                    # enterprise_slug and enterprise_id are enterprise-specific and should remain null
+                    # for organization-scoped Copilot runs.
                     "enterprise_slug": enterprise_slug,
                     "day": report_record.get("day"),
                     "enterprise_id": report_record.get("enterprise_id"),
@@ -792,10 +824,10 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
         # re-sync within the current day, we only advance the bookmark through
         # yesterday, even if today's report was successfully fetched.
         bookmark_day_value = min(latest_day_value, end_day - timedelta(days=1))
-        # Persist a per-enterprise bookmark so future runs resume efficiently.
+        # Persist a per-scope bookmark so future runs resume efficiently.
         singer.write_bookmark(
             _state,
-            enterprise_slug,
+            copilot_bookmark_key,
             COPILOT_USER_METRICS_STREAM,
             {"last_day": bookmark_day_value.strftime("%Y-%m-%d")},
         )
@@ -2369,16 +2401,19 @@ def do_sync(config, state, catalog):
     selected_stream_ids = get_selected_streams(catalog)
     validate_dependencies(selected_stream_ids)
 
-    # Copilot enterprise jobs are not repository-scoped. If repositories are not
-    # provided, run the normal sync loop once with `repo=None`. Hotglue can still
-    # control which streams are selected via the catalog/properties.
+    # Enterprise Copilot jobs are not repository-scoped. If repositories are not
+    # provided, only allow the enterprise Copilot pathway to run once with
+    # `repo=None`. Org Copilot metrics should come through the regular VCS
+    # connector config, which includes repository config.
     has_repo_config = bool(config.get("repository")) or any(
         isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
         for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
     )
     if not has_repo_config:
         if not enterprise_slug:
-            raise ValueError("Config does not contain 'repository' or 'repositories' keys or enterprise_slug.")
+            raise ValueError(
+                "Config does not contain 'repository' or 'repositories' keys. Repository-less Copilot runs require enterprise_slug."
+            )
         repositories = [None]
         singer.write_state(state)
     else:
@@ -2404,9 +2439,12 @@ def do_sync(config, state, catalog):
                 # these streams only need to be run once, not per repo
                 continue
 
-            # Copilot has its own connector and can run without a repository; all
-            # other streams are repository-scoped and must not run with repo=None.
-            if repo is None and (stream_id != COPILOT_USER_METRICS_STREAM or not enterprise_slug):
+            # Only enterprise Copilot should run without a repository. Org Copilot
+            # metrics should run on the regular repository-configured VCS path.
+            if repo is None and (
+                stream_id != COPILOT_USER_METRICS_STREAM
+                or not enterprise_slug
+            ):
                 continue
 
             # if stream is selected, write schema and sync
