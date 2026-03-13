@@ -66,7 +66,7 @@ KEY_PROPERTIES = {
     "workflow_run_jobs": ["id"],
     "artifacts": ["id"],
     # Copilot metrics are day-based and emitted per-user per-day.
-    # Prevent organization and enterprise collisions by marking the scope.
+    # Prevent organization and enterprise collisions by namespacing the scope.
     "copilot_user_metrics_1_day": ["copilot_scope", "day", "user_id"],
 }
 
@@ -776,7 +776,11 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
 
 
                 record = {
-                    "copilot_scope": copilot_bookmark_key,
+                    "copilot_scope": (
+                        f"enterprise:{enterprise_slug}"
+                        if enterprise_slug
+                        else f"organization:{organization}"
+                    ),
                     # enterprise_slug and enterprise_id are enterprise-specific and should remain null
                     # for organization-scoped Copilot runs.
                     "enterprise_slug": enterprise_slug,
