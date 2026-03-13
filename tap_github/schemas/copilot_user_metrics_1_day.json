@@ -4,6 +4,11 @@
     "object"
   ],
   "properties": {
+    "copilot_scope": {
+      "type": [
+        "string"
+      ]
+    },
     "enterprise_slug": {
       "type": [
         "null",
