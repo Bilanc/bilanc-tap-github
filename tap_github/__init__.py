@@ -377,14 +377,14 @@ def authed_get(source, url, headers={}):
         resp = session.request(method="get", url=url, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
+            if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
+                timer.tags[metrics.Tag.http_status_code] = resp.status_code
+                return resp
             reset_time, remaining = get_reset_time_and_remaining_calls(
                 resp,
                 message=f"[Request Status {resp.status_code}] Reset time was going to be reached in"
                 + " {} seconds.  Remaining {} calls",
             )
-            if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
-                timer.tags[metrics.Tag.http_status_code] = resp.status_code
-                return resp
             # wait for limit to reset
             if resp.status_code == 403:
                 rate_throttling(resp)
