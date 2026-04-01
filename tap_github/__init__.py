@@ -382,6 +382,9 @@ def authed_get(source, url, headers={}):
                 message=f"[Request Status {resp.status_code}] Reset time was going to be reached in"
                 + " {} seconds.  Remaining {} calls",
             )
+            if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
+                timer.tags[metrics.Tag.http_status_code] = resp.status_code
+                return resp
             # wait for limit to reset
             if resp.status_code == 403:
                 rate_throttling(resp)
@@ -715,6 +718,14 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     message or "no details",
                 )
                 break
+
+            if response.status_code == 204:
+                logger.info(
+                    "Copilot report returned HTTP 204 (no content) for %s; skipping.",
+                    report_day,
+                )
+                current_day += timedelta(days=1)
+                continue
 
             # 404 is expected when a report isn't available yet; skip forward.
             if response.status_code == 404:
