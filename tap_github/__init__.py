@@ -803,11 +803,13 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     "loc_deleted_sum": report_record.get("loc_deleted_sum"),
                     "used_agent": report_record.get("used_agent"),
                     "used_chat": report_record.get("used_chat"),
+                    "used_cli": report_record.get("used_cli"),
                     "totals_by_ide": report_record.get("totals_by_ide"),
                     "totals_by_feature": report_record.get("totals_by_feature"),
                     "totals_by_language_feature": report_record.get("totals_by_language_feature"),
                     "totals_by_language_model": report_record.get("totals_by_language_model"),
                     "totals_by_model_feature": report_record.get("totals_by_model_feature"),
+                    "totals_by_cli": report_record.get("totals_by_cli"),
                 }
                 add_insert_timestamp(record)
 

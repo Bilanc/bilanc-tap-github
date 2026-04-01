@@ -94,6 +94,12 @@
         "boolean"
       ]
     },
+    "used_cli": {
+      "type": [
+        "null",
+        "boolean"
+      ]
+    },
     "totals_by_ide": {
       "type": [
         "null",
@@ -153,6 +159,12 @@
           "object"
         ]
       }
+    },
+    "totals_by_cli": {
+      "type": [
+        "null",
+        "object"
+      ]
     },
     "inserted_at": {
       "type": [
