@@ -377,6 +377,9 @@ def authed_get(source, url, headers={}):
         resp = session.request(method="get", url=url, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
+            if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
+                timer.tags[metrics.Tag.http_status_code] = resp.status_code
+                return resp
             reset_time, remaining = get_reset_time_and_remaining_calls(
                 resp,
                 message=f"[Request Status {resp.status_code}] Reset time was going to be reached in"
@@ -716,6 +719,14 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                 )
                 break
 
+            if response.status_code == 204:
+                logger.info(
+                    "Copilot report returned HTTP 204 (no content) for %s; skipping.",
+                    report_day,
+                )
+                current_day += timedelta(days=1)
+                continue
+
             # 404 is expected when a report isn't available yet; skip forward.
             if response.status_code == 404:
                 message = None
@@ -803,11 +814,13 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     "loc_deleted_sum": report_record.get("loc_deleted_sum"),
                     "used_agent": report_record.get("used_agent"),
                     "used_chat": report_record.get("used_chat"),
+                    "used_cli": report_record.get("used_cli"),
                     "totals_by_ide": report_record.get("totals_by_ide"),
                     "totals_by_feature": report_record.get("totals_by_feature"),
                     "totals_by_language_feature": report_record.get("totals_by_language_feature"),
                     "totals_by_language_model": report_record.get("totals_by_language_model"),
                     "totals_by_model_feature": report_record.get("totals_by_model_feature"),
+                    "totals_by_cli": report_record.get("totals_by_cli"),
                 }
                 add_insert_timestamp(record)
 
