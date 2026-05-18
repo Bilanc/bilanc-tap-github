@@ -122,6 +122,10 @@ class RetriableServerError(GithubException):
     pass
 
 
+class BadGatewayError(RetriableServerError):
+    pass
+
+
 ERROR_CODE_EXCEPTION_MAPPING = {
     301: {
         "raise_exception": MovedPermanentlyError,
@@ -260,6 +264,9 @@ def raise_for_error(resp, source, remaining):
         # don't raise a AuthException for 403 errors that are not rate limit related
         return None
 
+    if error_code == 502:
+        raise BadGatewayError(resp.text)
+
     if 500 <= error_code < 600:
         raise RetriableServerError(resp.text)
 
@@ -388,6 +395,10 @@ def authed_get(source, url, headers={}):
             # wait for limit to reset
             if resp.status_code == 403:
                 rate_throttling(resp)
+            # Copilot stream handles 502 itself (stops instead of retrying)
+            if resp.status_code == 502 and source == COPILOT_USER_METRICS_STREAM:
+                timer.tags[metrics.Tag.http_status_code] = resp.status_code
+                return resp
             # retry
             raise_for_error(resp, source, remaining)
         timer.tags[metrics.Tag.http_status_code] = resp.status_code
@@ -399,7 +410,11 @@ def authed_get(source, url, headers={}):
 
 def authed_get_all_pages(source, url, headers={}):
     while True:
-        r = authed_get(source, url, headers)
+        try:
+            r = authed_get(source, url, headers)
+        except BadGatewayError as e:
+            logger.warning("Stopping stream %s after exhausting retries on 502: %s", source, e)
+            return
         yield r
         if "next" in r.links:
             url = r.links["next"]["url"]
@@ -704,6 +719,12 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
         extraction_time = singer.utils.now()
 
         if response.status_code != 200:
+            if response.status_code == 502:
+                logger.warning(
+                    "Copilot report metadata request for %s returned 502; stopping stream.",
+                    report_day,
+                )
+                return _state
             if response.status_code == 403:
                 message = None
                 try:
@@ -2198,7 +2219,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
     with metrics.record_counter("artifacts") as counter:
         for response in authed_get_all_pages(
             "artifacts",
-            "https://api.github.com/repos/{}/actions/artifacts?page_len=100".format(repo_path),
+            "https://api.github.com/repos/{}/actions/artifacts?per_page=100".format(repo_path),
             artifacts_headers,
         ):
             artifacts = response.json()
