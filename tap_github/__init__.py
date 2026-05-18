@@ -397,6 +397,7 @@ def authed_get(source, url, headers={}):
                 rate_throttling(resp)
             # Copilot stream handles 502 itself (stops instead of retrying)
             if resp.status_code == 502 and source == COPILOT_USER_METRICS_STREAM:
+                timer.tags[metrics.Tag.http_status_code] = resp.status_code
                 return resp
             # retry
             raise_for_error(resp, source, remaining)
