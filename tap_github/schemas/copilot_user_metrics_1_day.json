@@ -4,41 +4,18 @@
     "object"
   ],
   "properties": {
+    "copilot_scope": {
+      "type": [
+        "string"
+      ]
+    },
     "enterprise_slug": {
       "type": [
         "null",
         "string"
       ]
     },
-    "report_start_day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
-    "report_end_day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
     "day": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date"
-    },
-    "report_time": {
-      "type": [
-        "null",
-        "string"
-      ],
-      "format": "date-time"
-    },
-    "usage_date": {
       "type": [
         "null",
         "string"
@@ -117,6 +94,12 @@
         "boolean"
       ]
     },
+    "used_cli": {
+      "type": [
+        "null",
+        "boolean"
+      ]
+    },
     "totals_by_ide": {
       "type": [
         "null",
@@ -177,7 +160,7 @@
         ]
       }
     },
-    "user": {
+    "totals_by_cli": {
       "type": [
         "null",
         "object"
