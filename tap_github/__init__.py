@@ -258,6 +258,9 @@ def raise_for_error(resp, source, remaining):
         # don't raise a AuthException for 403 errors that are not rate limit related
         return None
 
+    if error_code == 502:
+        return None
+
     if 500 <= error_code < 600:
         raise RetriableServerError(resp.text)
 
@@ -686,6 +689,13 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
         extraction_time = singer.utils.now()
 
         if response.status_code != 200:
+            if response.status_code == 502:
+                logger.warning(
+                    "Copilot report metadata request for %s returned 502; stopping stream.",
+                    report_day,
+                )
+                return _state
+
             # 404 is expected when a report isn't available yet; skip forward.
             if response.status_code == 404:
                 message = None
@@ -2151,7 +2161,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
     with metrics.record_counter("artifacts") as counter:
         for response in authed_get_all_pages(
             "artifacts",
-            "https://api.github.com/repos/{}/actions/artifacts?page_len=100".format(repo_path),
+            "https://api.github.com/repos/{}/actions/artifacts?per_page=100".format(repo_path),
             artifacts_headers,
         ):
             artifacts = response.json()
