@@ -122,6 +122,10 @@ class RetriableServerError(GithubException):
     pass
 
 
+class BadGatewayError(RetriableServerError):
+    pass
+
+
 ERROR_CODE_EXCEPTION_MAPPING = {
     301: {
         "raise_exception": MovedPermanentlyError,
@@ -261,7 +265,7 @@ def raise_for_error(resp, source, remaining):
         return None
 
     if error_code == 502:
-        return None
+        raise BadGatewayError(resp.text)
 
     if 500 <= error_code < 600:
         raise RetriableServerError(resp.text)
@@ -391,6 +395,9 @@ def authed_get(source, url, headers={}):
             # wait for limit to reset
             if resp.status_code == 403:
                 rate_throttling(resp)
+            # Copilot stream handles 502 itself (stops instead of retrying)
+            if resp.status_code == 502 and source == COPILOT_USER_METRICS_STREAM:
+                return resp
             # retry
             raise_for_error(resp, source, remaining)
         timer.tags[metrics.Tag.http_status_code] = resp.status_code
@@ -402,7 +409,11 @@ def authed_get(source, url, headers={}):
 
 def authed_get_all_pages(source, url, headers={}):
     while True:
-        r = authed_get(source, url, headers)
+        try:
+            r = authed_get(source, url, headers)
+        except BadGatewayError as e:
+            logger.warning("Stopping stream %s after exhausting retries on 502: %s", source, e)
+            return
         yield r
         if "next" in r.links:
             url = r.links["next"]["url"]
