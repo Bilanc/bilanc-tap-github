@@ -1884,7 +1884,7 @@ def get_all_collaborators(schema, repo_path, state, mdata, _start_date):
 def get_default_branch(repo_path):
     response = authed_get("repo_info", "https://api.github.com/repos/{}".format(repo_path))
     repo_info = response.json()
-    return repo_info.get("default_branch", "main")
+    return repo_info.get("default_branch") or "main"
 
 
 def get_commit_pull_request_ids(repo_path, sha):
