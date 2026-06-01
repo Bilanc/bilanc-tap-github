@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 import json
 import collections
 import time
@@ -379,9 +380,8 @@ def refresh_token_if_expired():
 def authed_get(source, url, headers={}):
     refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
-        session.headers.update(headers)
         logger.info("Making request to %s", url)
-        resp = session.request(method="get", url=url, timeout=get_request_timeout())
+        resp = session.request(method="get", url=url, headers=headers, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
             if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
@@ -1918,7 +1918,7 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
         for response in authed_get_all_pages(
             "commits",
             "https://api.github.com/repos/{}/commits?sha={}&per_page=100{}".format(
-                repo_path, default_branch, query_string
+                repo_path, urllib.parse.quote(default_branch, safe=""), query_string
             ),
         ):
             commits = response.json()
