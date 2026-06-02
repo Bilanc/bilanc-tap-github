@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 import json
 import collections
 import time
@@ -379,9 +380,8 @@ def refresh_token_if_expired():
 def authed_get(source, url, headers={}):
     refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
-        session.headers.update(headers)
         logger.info("Making request to %s", url)
-        resp = session.request(method="get", url=url, timeout=get_request_timeout())
+        resp = session.request(method="get", url=url, headers=headers, timeout=get_request_timeout())
         logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
             if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
@@ -1881,21 +1881,44 @@ def get_all_collaborators(schema, repo_path, state, mdata, _start_date):
     return state
 
 
+def get_default_branch(repo_path):
+    response = authed_get("repo_info", "https://api.github.com/repos/{}".format(repo_path))
+    repo_info = response.json()
+    return repo_info.get("default_branch") or "main"
+
+
+def get_commit_pull_request_ids(repo_path, sha):
+    try:
+        response = authed_get(
+            "commit_pulls",
+            "https://api.github.com/repos/{}/commits/{}/pulls".format(repo_path, sha),
+            headers={"Accept": "application/vnd.github.groot-preview+json"},
+        )
+        pulls = response.json()
+        if isinstance(pulls, list):
+            return [pr.get("id") for pr in pulls if pr.get("id") is not None]
+    except Exception:
+        pass
+    return []
+
+
 def get_all_commits(schema, repo_path, state, mdata, start_date):
     """
     https://developer.github.com/v3/repos/commits/#list-commits-on-a-repository
     """
     bookmark = get_bookmark(state, repo_path, "commits", "since", start_date)
     if bookmark:
-        query_string = "?since={}".format(bookmark)
+        query_string = "&since={}".format(bookmark)
     else:
         query_string = ""
+
+    default_branch = get_default_branch(repo_path)
 
     with metrics.record_counter("commits") as counter:
         for response in authed_get_all_pages(
             "commits",
-            "https://api.github.com/repos/{}/commits{}?per_page=100".format(
-                repo_path, query_string
+            "https://api.github.com/repos/{}/commits?sha={}&per_page=100{}".format(
+                repo_path, urllib.parse.quote(default_branch, safe=""), query_string
             ),
         ):
             commits = response.json()
@@ -1905,6 +1928,9 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
             extraction_time = singer.utils.now()
             for commit in commits:
                 commit["_sdc_repository"] = repo_path
+                commit["pull_request_ids"] = get_commit_pull_request_ids(
+                    repo_path, commit.get("sha")
+                )
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
                         commit, schema, metadata=metadata.to_map(mdata)

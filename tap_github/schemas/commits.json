@@ -308,6 +308,16 @@
         }
       }
     },
+    "pull_request_ids": {
+      "type": [
+        "null",
+        "array"
+      ],
+      "items": {
+        "type": ["null", "integer"]
+      },
+      "description": "The id of all pull requests this commit is associated with"
+    },
     "inserted_at": {
       "type": [
         "string"
