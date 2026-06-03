@@ -308,6 +308,23 @@
         }
       }
     },
+    "stats": {
+      "type": [
+        "null",
+        "object"
+      ],
+      "properties": {
+        "additions": {
+          "type": ["null", "integer"]
+        },
+        "deletions": {
+          "type": ["null", "integer"]
+        },
+        "total": {
+          "type": ["null", "integer"]
+        }
+      }
+    },
     "pull_request_ids": {
       "type": [
         "null",
