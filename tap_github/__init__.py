@@ -27,6 +27,9 @@ def add_insert_timestamp(record):
 session = requests.Session()
 logger = singer.get_logger()
 
+# Cache of commit stats fetched during pr_commits processing, keyed by (repo_path, sha)
+_commit_stats_cache: Dict[Tuple[str, str], Optional[dict]] = {}
+
 # set default timeout of 300 seconds
 REQUEST_TIMEOUT = 300
 
@@ -1787,6 +1790,7 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
                 commit_details = response.json()
                 commit["files"] = commit_details.get("files")
                 commit["stats"] = commit_details.get("stats")
+                _commit_stats_cache[(repo_path, sha)] = commit["stats"]
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
                         commit, schema, metadata=metadata.to_map(mdata)
@@ -1928,9 +1932,21 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
             extraction_time = singer.utils.now()
             for commit in commits:
                 commit["_sdc_repository"] = repo_path
+                sha = commit.get("sha")
                 commit["pull_request_ids"] = get_commit_pull_request_ids(
-                    repo_path, commit.get("sha")
+                    repo_path, sha
                 )
+                if (repo_path, sha) in _commit_stats_cache:
+                    commit["stats"] = _commit_stats_cache[(repo_path, sha)]
+                else:
+                    for detail_response in authed_get_all_pages(
+                        "commit_details",
+                        "https://api.github.com/repos/{}/commits/{}".format(repo_path, sha),
+                    ):
+                        detail = detail_response.json()
+                        commit["stats"] = detail.get("stats")
+                        _commit_stats_cache[(repo_path, sha)] = commit["stats"]
+                        break
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
                         commit, schema, metadata=metadata.to_map(mdata)
