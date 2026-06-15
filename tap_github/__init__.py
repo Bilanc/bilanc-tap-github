@@ -334,6 +334,7 @@ config_path = None
 organization = None
 enterprise_slug = None
 is_nango_token = False
+nango_provider_config_key = "github-app-oauth"
 
 
 def refresh_token_if_expired():
@@ -354,7 +355,7 @@ def refresh_token_if_expired():
 
         if is_nango_token:
             logger.info("Nango access token is stale, refreshing...")
-            config, access_token_expires_at = refresh_nango_token(config)
+            config, access_token_expires_at = refresh_nango_token(config, nango_provider_config_key)
             # set to 20 minutes before actual expiry to avoid Nango frontend edge case, refreshing token automatically within 15 minutes of expiring
             access_token_expires_at = (
                 datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ")
@@ -2579,6 +2580,7 @@ def main():
     global organization
     global enterprise_slug
     global is_nango_token
+    global nango_provider_config_key
     global api_base_url
 
     # Store config path for later use
@@ -2612,10 +2614,12 @@ def main():
     if nango_connection_id and nango_secret_key:
         # Self-hosted connections authenticate with a personal access token
         # (github-pat); cloud connections use the GitHub App OAuth integration.
-        provider_config_key = "github-pat" if self_hosted else "github-app-oauth"
+        nango_provider_config_key = "github-pat" if self_hosted else "github-app-oauth"
         args.config, access_token_expires_at = refresh_nango_token(
-            args.config, provider_config_key
+            args.config, nango_provider_config_key
         )
+        is_nango_token = True
+        refresh_token_expires_at = None
         if access_token_expires_at:
             # set to 20 minutes before actual expiry to avoid Nango frontend edge case, refreshing token automatically within 15 minutes of expiring
             access_token_expires_at = (
@@ -2625,7 +2629,6 @@ def main():
             logger.info(
                 f"Refreshed Nango access token, expires at {access_token_expires_at}"
             )
-            is_nango_token = True
         else:
             # API key connections (github-pat) do not expire and need no refresh.
             logger.info("Retrieved Nango personal access token (no expiry)")
