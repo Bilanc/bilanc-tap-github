@@ -2604,7 +2604,13 @@ def main():
         "1",
     )
     base_url = args.config.get("base_url")
-    if self_hosted and base_url:
+    if self_hosted:
+        if not base_url:
+            raise Exception(
+                "self_hosted is enabled but base_url is not set. "
+                "Please provide the base URL of your GitHub Enterprise Server "
+                "(e.g. https://github.example.com)."
+            )
         api_base_url = base_url.rstrip("/") + "/api/v3"
         logger.info(f"Self-hosted GitHub Enterprise; using API base {api_base_url}")
 
