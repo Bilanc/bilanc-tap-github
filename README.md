@@ -63,6 +63,31 @@ This tap:
      "start_date": "2021-01-01T00:00:00Z",
      "request_timeout": 300}
     ```
+
+    ### GitHub App: sync every installation automatically
+
+    Instead of an access token and an explicit repository list, you can provide
+    only your GitHub App's `app_id` and `private_key` (the `.pem`). The tap then
+    authenticates as the app, discovers **every organization/account the app is
+    installed on**, mints a scoped installation token for each, and syncs **all
+    repositories** that installation can access — no `installation_id` or
+    `repository` needed.
+
+    ```json
+    {"app_id": "123456",
+     "private_key": "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----\n",
+     "start_date": "2021-01-01T00:00:00Z",
+     "request_timeout": 300}
+    ```
+
+    This mode activates automatically whenever `app_id` + `private_key` are
+    present and `installation_id` is omitted. Supplying `installation_id` keeps
+    the original single-installation behavior.
+
+    `app_id` and `private_key` may also be provided via the `GITHUB_APP_ID` and
+    `GITHUB_PRIVATE_KEY` environment variables instead of the config file (the
+    config file takes precedence when both are set).
+
 4. Run the tap in discovery mode to get properties.json file
 
     ```bash

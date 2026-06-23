@@ -1993,6 +1993,9 @@ def get_all_issues(schema, repo_path, state, mdata, start_date):
             ),
         ):
             issues = response.json()
+            if not isinstance(issues, list):
+                logger.warning("Expected list of issues but got %s, skipping", type(issues).__name__)
+                continue
             extraction_time = singer.utils.now()
             for issue in issues:
                 issue["_sdc_repository"] = repo_path
