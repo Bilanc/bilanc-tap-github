@@ -2330,31 +2330,104 @@ def get_request_timeout():
     # return default timeout
     return REQUEST_TIMEOUT
 
+def get_app_jwt(config):
+    """Mint a short-lived JWT signed with the GitHub App's private key.
 
-def get_jwt_token(config):
-    # Get app token
+    This authenticates *as the app itself* (not an installation) and is what
+    GitHub requires to list installations and to mint installation access
+    tokens. Requires only `app_id` and `private_key` in the config.
+    """
     private_key = config["private_key"]
-    app_id = config["app_id"]
+    # GitHub expects `iss` to be the numeric App ID as a string/int; coerce so a
+    # quoted or padded env value still signs a valid token.
+    app_id = str(config["app_id"]).strip()
 
     now = int(datetime.now().timestamp())
 
     payload = {"iat": now - 60, "exp": now + (10 * 60), "iss": app_id}
 
-    jwt_token = jwt.encode(payload, private_key, algorithm="RS256")
+    return jwt.encode(payload, private_key, algorithm="RS256")
 
-    # Get client token
-    inst_id = config["installation_id"]
-    url = f"{api_base_url}/app/installations/{inst_id}/access_tokens"
+
+def get_installation_token(config, installation_id):
+    """Exchange the app JWT for an installation access token.
+
+    Installation tokens are scoped to a single installation (one org/account)
+    and expire after ~1 hour, so they are minted right before they are used.
+    """
+    jwt_token = get_app_jwt(config)
+
+    url = f"{api_base_url}/app/installations/{installation_id}/access_tokens"
 
     header = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {jwt_token}",
     }
 
-    response = requests.post(url, headers=header)
-    token = response.json()["token"]
+    response = requests.post(url, headers=header, timeout=get_request_timeout())
+    response.raise_for_status()
+    return response.json()["token"]
 
-    return token
+
+def get_jwt_token(config):
+    # Mint an installation token for the single installation_id in the config.
+    return get_installation_token(config, config["installation_id"])
+
+
+def list_app_installations(config):
+    """List every installation of the GitHub App (paginated).
+
+    Authenticates with the app JWT and returns a list of
+    {"id": <installation_id>, "account": <login>} dicts.
+
+    Docs: https://docs.github.com/en/rest/apps/apps#list-installations-for-the-authenticated-app
+    """
+    jwt_token = get_app_jwt(config)
+    print(jwt_token)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {jwt_token}",
+    }
+
+    installations = []
+    url = f"{api_base_url}/app/installations?per_page=100"
+    while url:
+        resp = requests.get(url, headers=headers, timeout=get_request_timeout())
+        resp.raise_for_status()
+        for inst in resp.json():
+            account = inst.get("account") or {}
+            installations.append(
+                {"id": inst["id"], "account": account.get("login")}
+            )
+        url = resp.links.get("next", {}).get("url")
+
+    return installations
+
+
+def list_installation_repos(token):
+    """List every repository an installation can access (paginated).
+
+    Uses the installation access token (not the app JWT) and returns a list of
+    `owner/name` full names.
+
+    Docs: https://docs.github.com/en/rest/apps/installations#list-repositories-accessible-to-the-app-installation
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "token " + token,
+    }
+
+    repos = []
+    url = f"{api_base_url}/installation/repositories?per_page=100"
+    while url:
+        resp = requests.get(url, headers=headers, timeout=get_request_timeout())
+        resp.raise_for_status()
+        data = resp.json()
+        for repo in data.get("repositories", []):
+            repos.append(repo["full_name"])
+        url = resp.links.get("next", {}).get("url")
+
+    return repos
 
 
 def refresh_oauth_token(config):
@@ -2477,7 +2550,7 @@ RUN_ONCE_STREAMS = {
 }
 
 
-def do_sync(config, state, catalog):
+def do_sync(config, state, catalog, skip_state_init=False):
     access_token = config["access_token"]
     if config["is_jwt_token"]:
         session.headers.update({"authorization": "token " + access_token})
@@ -2489,25 +2562,32 @@ def do_sync(config, state, catalog):
     selected_stream_ids = get_selected_streams(catalog)
     validate_dependencies(selected_stream_ids)
 
-    # Enterprise Copilot jobs are not repository-scoped. If repositories are not
-    # provided, only allow the enterprise Copilot pathway to run once with
-    # `repo=None`. Org Copilot metrics should come through the regular VCS
-    # connector config, which includes repository config.
-    has_repo_config = bool(config.get("repository")) or any(
-        isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
-        for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
-    )
-    if not has_repo_config:
-        if not enterprise_slug:
-            raise ValueError(
-                "Config does not contain 'repository' or 'repositories' keys. Repository-less Copilot runs require enterprise_slug."
-            )
-        repositories = [None]
-        singer.write_state(state)
-    else:
+    # When called per-installation by do_sync_all_installations, the caller has
+    # already translated/written state once across the full repo set, so just
+    # resolve this installation's repos and skip re-initialising state (which
+    # would otherwise drop other installations' bookmarks).
+    if skip_state_init:
         repositories = extract_repos_from_config(config)
-        state = translate_state(state, catalog, repositories)
-        singer.write_state(state)
+    else:
+        # Enterprise Copilot jobs are not repository-scoped. If repositories are
+        # not provided, only allow the enterprise Copilot pathway to run once
+        # with `repo=None`. Org Copilot metrics should come through the regular
+        # VCS connector config, which includes repository config.
+        has_repo_config = bool(config.get("repository")) or any(
+            isinstance(repo_obj, dict) and bool(repo_obj.get("repository"))
+            for repo_obj in (config.get("repositories") or []) # check against {repositories: [{repository: "org/repo"}]}
+        )
+        if not has_repo_config:
+            if not enterprise_slug:
+                raise ValueError(
+                    "Config does not contain 'repository' or 'repositories' keys. Repository-less Copilot runs require enterprise_slug."
+                )
+            repositories = [None]
+            singer.write_state(state)
+        else:
+            repositories = extract_repos_from_config(config)
+            state = translate_state(state, catalog, repositories)
+            singer.write_state(state)
 
     # pylint: disable=too-many-nested-blocks
     for index, repo in enumerate(repositories):
@@ -2571,6 +2651,62 @@ def do_sync(config, state, catalog):
 
                 singer.write_state(state)
 
+    return state
+
+
+def do_sync_all_installations(config, state, catalog):
+    """Discover every installation of the GitHub App and sync all of their repos.
+
+    Triggered when the config provides `app_id` + `private_key` but no
+    `installation_id`. For each installation we mint a scoped installation token
+    and enumerate the repositories it can access, then run the regular per-repo
+    sync against that installation.
+    """
+    global organization
+
+    installations = list_app_installations(config)
+    logger.info("GitHub App is installed on %d installation(s)", len(installations))
+
+    # Gather each installation's repos up front so state can be translated once
+    # across the full repo set. translate_state rebuilds state for only the
+    # repos it is handed, so translating per-installation would drop the
+    # bookmarks of every other installation.
+    plan = []
+    all_repos = []
+    for inst in installations:
+        token = get_installation_token(config, inst["id"])
+        repos = list_installation_repos(token)
+        logger.info(
+            "Installation id=%s account=%s: %d repositories",
+            inst["id"],
+            inst["account"],
+            len(repos),
+        )
+        if not repos:
+            continue
+        plan.append((inst, repos))
+        all_repos.extend(repos)
+
+    state = translate_state(state, catalog, all_repos)
+    singer.write_state(state)
+
+    for inst, repos in plan:
+        organization = inst["account"]
+        logger.info(
+            "Starting sync for installation account=%s (%d repos)",
+            inst["account"],
+            len(repos),
+        )
+        # Mint a fresh installation token right before syncing so it does not
+        # expire while earlier installations are still being processed.
+        install_config = dict(config)
+        install_config["access_token"] = get_installation_token(config, inst["id"])
+        install_config["is_jwt_token"] = True
+        install_config["repository"] = " ".join(repos)
+        state = do_sync(install_config, state, catalog, skip_state_init=True)
+
+    return state
+
 
 @singer.utils.handle_top_exception(logger)
 def main():
@@ -2592,7 +2728,17 @@ def main():
     args = singer.utils.parse_args(REQUIRED_CONFIG_KEYS)
 
     args.config["is_jwt_token"] = False
-    organization = args.config["organization"]
+
+    # Allow GitHub App credentials to be supplied via environment variables as a
+    # fallback when not present in the config file (mirrors GITHUB_ACCESS_TOKEN).
+    if not args.config.get("app_id") and os.getenv("GITHUB_APP_ID"):
+        args.config["app_id"] = os.getenv("GITHUB_APP_ID")
+    if not args.config.get("private_key") and os.getenv("GITHUB_PRIVATE_KEY"):
+        args.config["private_key"] = os.getenv("GITHUB_PRIVATE_KEY")
+
+    # `organization` is optional: in multi-installation discovery mode it is set
+    # per installation from the installation's account login.
+    organization = args.config.get("organization")
     enterprise_slug = args.config.get("enterprise_slug")
     access_token_expires_at = args.config.get("access_token_expires_at")
     refresh_token_expires_at = args.config.get("refresh_token_expires_at")
@@ -2603,7 +2749,7 @@ def main():
         "true",
         "1",
     )
-    base_url = args.config.get("base_url")
+    base_url = args.config.get("base_url") or os.getenv("GITHUB_BASE_URL")
     if self_hosted and base_url:
         api_base_url = base_url.rstrip("/") + "/api/v3"
         logger.info(f"Self-hosted GitHub Enterprise; using API base {api_base_url}")
@@ -2632,6 +2778,24 @@ def main():
         else:
             # API key connections (github-pat) do not expire and need no refresh.
             logger.info("Retrieved Nango personal access token (no expiry)")
+
+    # Multi-installation discovery mode: with only `app_id` + `private_key` (no
+    # `installation_id`), authenticate as the app, enumerate every installation,
+    # and sync all repositories of each one with its own scoped token.
+    discover_installations = (
+        not args.config.get("access_token")
+        and "app_id" in args.config
+        and "private_key" in args.config
+        and "installation_id" not in args.config
+    )
+
+    if discover_installations:
+        if args.discover:
+            do_discover(args.config)
+        else:
+            catalog = args.properties if args.properties else get_catalog()
+            do_sync_all_installations(args.config, args.state, catalog)
+        return
 
     if not args.config.get("access_token"):
         if (
