@@ -2686,8 +2686,9 @@ def do_sync_all_installations(config, state, catalog):
         plan.append((inst, repos))
         all_repos.extend(repos)
 
-    state = translate_state(state, catalog, all_repos)
-    singer.write_state(state)
+    if all_repos:
+        state = translate_state(state, catalog, all_repos)
+        singer.write_state(state)
 
     for inst, repos in plan:
         organization = inst["account"]
@@ -2785,7 +2786,7 @@ def main():
         not args.config.get("access_token")
         and "app_id" in args.config
         and "private_key" in args.config
-        and "installation_id" not in args.config
+        and not args.config.get("installation_id")
     )
 
     if discover_installations:
@@ -2800,7 +2801,7 @@ def main():
         if (
             "app_id" in args.config
             and "private_key" in args.config
-            and "installation_id" in args.config
+            and args.config.get("installation_id")
         ):
             args.config["access_token"] = get_jwt_token(args.config)
             args.config["is_jwt_token"] = True
