@@ -884,7 +884,9 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
     return _state
 
 def get_all_teams(schemas, repo_path, state, mdata, _start_date):
-    org = repo_path.split("/")[0]
+    org = repo_path.split("/")[0] if repo_path else organization
+    if not org:
+        return state
     with metrics.record_counter("teams") as counter:
         for response in authed_get_all_pages(
             "teams",
@@ -940,6 +942,8 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
 
 
 def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
+    if not organization:
+        return state
     with metrics.record_counter("organizations") as counter:
         response = authed_get(
             "organizations", f"{api_base_url}/orgs/{organization}"
@@ -2396,7 +2400,11 @@ def list_app_installations(config):
         for inst in resp.json():
             account = inst.get("account") or {}
             installations.append(
-                {"id": inst["id"], "account": account.get("login")}
+                {
+                    "id": inst["id"],
+                    "account": account.get("login"),
+                    "account_type": account.get("type"),
+                }
             )
         url = resp.links.get("next", {}).get("url")
 
@@ -2566,7 +2574,10 @@ def do_sync(config, state, catalog, skip_state_init=False):
     # resolve this installation's repos and skip re-initialising state (which
     # would otherwise drop other installations' bookmarks).
     if skip_state_init:
-        repositories = extract_repos_from_config(config)
+        if config.get("repository") or config.get("repositories"):
+            repositories = extract_repos_from_config(config)
+        else:
+            repositories = [None]
     else:
         # Enterprise Copilot jobs are not repository-scoped. If repositories are
         # not provided, only allow the enterprise Copilot pathway to run once
@@ -2606,13 +2617,12 @@ def do_sync(config, state, catalog, skip_state_init=False):
                 # these streams only need to be run once, not per repo
                 continue
 
-            # Only enterprise Copilot should run without a repository. Org Copilot
-            # metrics should run on the regular repository-configured VCS path.
-            if repo is None and (
-                stream_id != COPILOT_USER_METRICS_STREAM
-                or not enterprise_slug
-            ):
-                continue
+            if repo is None:
+                if stream_id in RUN_ONCE_STREAMS:
+                    if stream_id == COPILOT_USER_METRICS_STREAM and not enterprise_slug:
+                        continue
+                else:
+                    continue
 
             # if stream is selected, write schema and sync
             if stream_id in selected_stream_ids:
@@ -2676,12 +2686,13 @@ def do_sync_all_installations(config, state, catalog):
         token = get_installation_token(config, inst["id"])
         repos = list_installation_repos(token)
         logger.info(
-            "Installation id=%s account=%s: %d repositories",
+            "Installation id=%s account=%s type=%s: %d repositories",
             inst["id"],
             inst["account"],
+            inst["account_type"],
             len(repos),
         )
-        if not repos:
+        if not repos and inst["account_type"] != "Organization":
             continue
         plan.append((inst, repos))
         all_repos.extend(repos)
@@ -2691,7 +2702,10 @@ def do_sync_all_installations(config, state, catalog):
         singer.write_state(state)
 
     for inst, repos in plan:
-        organization = inst["account"]
+        if inst["account_type"] == "Organization":
+            organization = inst["account"]
+        else:
+            organization = None
         logger.info(
             "Starting sync for installation account=%s (%d repos)",
             inst["account"],
@@ -2702,7 +2716,8 @@ def do_sync_all_installations(config, state, catalog):
         install_config = dict(config)
         install_config["access_token"] = get_installation_token(config, inst["id"])
         install_config["is_jwt_token"] = True
-        install_config["repository"] = " ".join(repos)
+        if repos:
+            install_config["repository"] = " ".join(repos)
         state = do_sync(install_config, state, catalog, skip_state_init=True)
 
     return state
