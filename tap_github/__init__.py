@@ -2383,7 +2383,6 @@ def list_app_installations(config):
     Docs: https://docs.github.com/en/rest/apps/apps#list-installations-for-the-authenticated-app
     """
     jwt_token = get_app_jwt(config)
-    print(jwt_token)
     headers = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {jwt_token}",
