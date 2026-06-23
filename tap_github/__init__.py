@@ -2618,9 +2618,11 @@ def do_sync(config, state, catalog, skip_state_init=False):
                 continue
 
             if repo is None:
-                if stream_id in RUN_ONCE_STREAMS:
-                    if stream_id == COPILOT_USER_METRICS_STREAM and not enterprise_slug:
+                if stream_id == COPILOT_USER_METRICS_STREAM:
+                    if not enterprise_slug:
                         continue
+                elif stream_id in RUN_ONCE_STREAMS and skip_state_init:
+                    pass
                 else:
                     continue
 
@@ -2718,6 +2720,9 @@ def do_sync_all_installations(config, state, catalog):
         install_config["is_jwt_token"] = True
         if repos:
             install_config["repository"] = " ".join(repos)
+        else:
+            install_config.pop("repository", None)
+            install_config.pop("repositories", None)
         state = do_sync(install_config, state, catalog, skip_state_init=True)
 
     return state
