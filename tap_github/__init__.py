@@ -349,6 +349,11 @@ organization = None
 enterprise_slug = None
 is_nango_token = False
 nango_provider_config_key = "github-app-oauth"
+# GitHub App installation-token refresh context. Installation tokens expire
+# after ~1h, so we hold the credentials needed to re-mint one mid-sync.
+is_app_token = False
+app_config = None
+app_installation_id = None
 
 
 def refresh_token_if_expired():
@@ -363,6 +368,18 @@ def refresh_token_if_expired():
     )
 
     if stale_access_token or stale_refresh_token:
+        if is_app_token:
+            # GitHub App installation tokens cannot be "refreshed"; they are
+            # re-minted from the app's private key for the same installation.
+            logger.info("GitHub App installation token is stale, re-minting...")
+            token, expires_at = get_installation_token(app_config, app_installation_id)
+            access_token_expires_at = _installation_token_expiry(expires_at)
+            session.headers["authorization"] = "token " + token
+            logger.info(
+                "Re-minted installation token, expires at %s", access_token_expires_at
+            )
+            return
+
         # Pull config
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -2409,6 +2426,9 @@ def get_installation_token(config, installation_id):
 
     Installation tokens are scoped to a single installation (one org/account)
     and expire after ~1 hour, so they are minted right before they are used.
+
+    Returns a `(token, expires_at)` tuple where `expires_at` is GitHub's raw
+    ISO-8601 expiry string (e.g. "2024-01-01T12:00:00Z").
     """
     jwt_token = get_app_jwt(config)
 
@@ -2421,12 +2441,45 @@ def get_installation_token(config, installation_id):
 
     response = requests.post(url, headers=header, timeout=get_request_timeout())
     response.raise_for_status()
-    return response.json()["token"]
+    body = response.json()
+    return body["token"], body.get("expires_at")
+
+
+def _installation_token_expiry(expires_at):
+    """Convert GitHub's `expires_at` into a margin-adjusted, comparable ISO ts.
+
+    Returns a tz-aware ISO string matching `datetime.now(pytz.UTC).isoformat()`
+    so the string comparison in `refresh_token_if_expired` is reliable, backed
+    off 5 minutes so a token is never used right up to the moment it lapses.
+    Returns None when GitHub omits `expires_at` (then no refresh is attempted).
+    """
+    if not expires_at:
+        return None
+    expiry = datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=pytz.UTC
+    )
+    return (expiry - timedelta(minutes=5)).isoformat()
+
+
+def _arm_app_token_refresh(config, installation_id):
+    """Mint an installation token and arm `refresh_token_if_expired` to re-mint.
+
+    Stores the credentials/expiry needed to transparently re-mint the token
+    when it goes stale mid-sync, and returns the freshly minted token string.
+    """
+    global is_app_token, app_config, app_installation_id, access_token_expires_at
+    token, expires_at = get_installation_token(config, installation_id)
+    is_app_token = True
+    app_config = config
+    app_installation_id = installation_id
+    access_token_expires_at = _installation_token_expiry(expires_at)
+    return token
 
 
 def get_jwt_token(config):
     # Mint an installation token for the single installation_id in the config.
-    return get_installation_token(config, config["installation_id"])
+    token, _ = get_installation_token(config, config["installation_id"])
+    return token
 
 
 def list_app_installations(config):
@@ -2734,7 +2787,7 @@ def do_sync_all_installations(config, state, catalog):
     plan = []
     all_repos = []
     for inst in installations:
-        token = get_installation_token(config, inst["id"])
+        token, _ = get_installation_token(config, inst["id"])
         repos = list_installation_repos(token)
         logger.info(
             "Installation id=%s account=%s type=%s: %d repositories",
@@ -2763,9 +2816,11 @@ def do_sync_all_installations(config, state, catalog):
             len(repos),
         )
         # Mint a fresh installation token right before syncing so it does not
-        # expire while earlier installations are still being processed.
+        # expire while earlier installations are still being processed, and arm
+        # the refresh machinery to re-mint it if this installation's sync runs
+        # long enough to outlive the ~1h token lifetime.
         install_config = dict(config)
-        install_config["access_token"] = get_installation_token(config, inst["id"])
+        install_config["access_token"] = _arm_app_token_refresh(config, inst["id"])
         install_config["is_jwt_token"] = True
         if repos:
             install_config["repository"] = " ".join(repos)
@@ -2869,7 +2924,9 @@ def main():
             and "private_key" in args.config
             and args.config.get("installation_id")
         ):
-            args.config["access_token"] = get_jwt_token(args.config)
+            args.config["access_token"] = _arm_app_token_refresh(
+                args.config, args.config["installation_id"]
+            )
             args.config["is_jwt_token"] = True
         elif (
             "refresh_token" in args.config
