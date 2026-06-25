@@ -1,4 +1,6 @@
 import os
+import base64
+import binascii
 import urllib.parse
 import json
 import collections
@@ -2337,6 +2339,36 @@ def get_request_timeout():
     # return default timeout
     return REQUEST_TIMEOUT
 
+def _normalize_private_key(private_key):
+    """Return a PEM private key, decoding it first if it was base64-encoded.
+
+    A PEM key is multi-line, which is awkward to pass through env vars or JSON
+    config, so it is commonly base64-encoded into a single line. A real PEM
+    always contains the `-----BEGIN` header, so if that marker is absent we
+    assume the value is base64 and decode it.
+    """
+    if isinstance(private_key, bytes):
+        private_key = private_key.decode("utf-8")
+    private_key = private_key.strip()
+
+    if "-----BEGIN" in private_key:
+        return private_key
+
+    try:
+        decoded = base64.b64decode(private_key, validate=True).decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+        raise ValueError(
+            "private_key is neither a PEM key (missing '-----BEGIN' header) "
+            "nor valid base64-encoded PEM"
+        ) from exc
+
+    if "-----BEGIN" not in decoded:
+        raise ValueError(
+            "base64-decoded private_key does not contain a PEM '-----BEGIN' header"
+        )
+    return decoded
+
+
 def get_app_jwt(config):
     """Mint a short-lived JWT signed with the GitHub App's private key.
 
@@ -2344,7 +2376,7 @@ def get_app_jwt(config):
     GitHub requires to list installations and to mint installation access
     tokens. Requires only `app_id` and `private_key` in the config.
     """
-    private_key = config["private_key"]
+    private_key = _normalize_private_key(config["private_key"])
     # GitHub expects `iss` to be the numeric App ID as a string/int; coerce so a
     # quoted or padded env value still signs a valid token.
     app_id = str(config["app_id"]).strip()
