@@ -267,6 +267,18 @@ def raise_for_error(resp, source, remaining):
         # don't raise a NotFoundException
         return None
 
+    if error_code == 422:
+        details = response_json if response_json else resp.text
+        logger.warning(
+            "HTTP-error-code: 422 on %s. Response: %s", source, details
+        )
+        # The single-commit endpoint can return 422 on commits with very large
+        # diffs (notably on GitHub Enterprise) when paginating the files array.
+        # Treat it as non-fatal for commit_details so the sync keeps going
+        # instead of crashing on one oversized commit.
+        if source == "commit_details":
+            return None
+
     if error_code == 403:
         if remaining == 0:
             raise APIRateLimitExceededError(
@@ -1808,6 +1820,10 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
                         commit, schema, metadata=metadata.to_map(mdata)
                     )
                 yield rec
+                # Only the first page is needed (files + stats). Following the
+                # `next` link paginates a large commit's files array, which
+                # GitHub Enterprise rejects with 422 on deep pages.
+                break
 
         return state
 
