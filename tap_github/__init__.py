@@ -458,6 +458,19 @@ def authed_get_all_pages(source, url, headers={}):
         except BadGatewayError as e:
             logger.warning("Stopping stream %s after exhausting retries on 502: %s", source, e)
             return
+        except UnprocessableError as e:
+            # GitHub/GHES cap offset pagination at 10,000 results and return 422
+            # once that boundary is crossed. Treat hitting the cap as the end of
+            # the stream (we keep every page collected up to that point) instead
+            # of failing the whole sync.
+            if "first 10000 results" in str(e):
+                logger.warning(
+                    "Stopping stream %s at GitHub's 10,000-result pagination cap: %s",
+                    source,
+                    e,
+                )
+                return
+            raise
         yield r
         if "next" in r.links:
             url = r.links["next"]["url"]
