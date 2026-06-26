@@ -2843,6 +2843,14 @@ def main():
     global nango_provider_config_key
     global api_base_url
 
+    # TEST HOOK: force a failure to exercise the extractor's error reporting.
+    # Set TAP_FORCE_ERROR=1 to make the tap raise immediately. Dormant (no
+    # effect) when the var is unset, so this is safe to leave on master.
+    if os.getenv("TAP_FORCE_ERROR"):
+        raise RuntimeError(
+            "TAP_FORCE_ERROR set: simulated tap failure for error-reporting test."
+        )
+
     # Store config path for later use
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="config.json")
