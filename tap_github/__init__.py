@@ -326,7 +326,10 @@ def get_reset_time_and_remaining_calls(
         seconds_to_sleep = calculate_seconds(reset_time)
         logger.info(message.format(seconds_to_sleep, remaining))
     except:
-        logger.exception(response.headers)
+        # Rate-limit headers are absent on some responses (notably GHES 404s).
+        # This is expected and handled by returning None; log at debug to avoid
+        # noisy, misleading tracebacks.
+        logger.debug("Rate-limit headers unavailable: %s", response.headers)
         return None, None
     return reset_time, remaining
 
@@ -2164,7 +2167,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
             
             workflows = response.json()
             extraction_time = singer.utils.now()
-            for workflow in workflows["workflows"]:
+            for workflow in workflows.get("workflows", []):
                 workflow_id = workflow["id"]
                 workflow["_sdc_repository"] = repo_path
                 if schemas.get("workflow_runs"):
@@ -2217,7 +2220,7 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
             workflow_runs_headers,
         ):
             workflow_runs = response.json()
-            for run in workflow_runs["workflow_runs"]:
+            for run in workflow_runs.get("workflow_runs", []):
                 if (
                     bookmark_time
                     and singer.utils.strptime_to_utc(run.get("updated_at"))
@@ -2275,7 +2278,7 @@ def get_jobs_for_workflow_run(run_id, schema, repo_path, state, mdata):
             ),
         ):
             jobs = response.json()
-            for job in jobs["jobs"]:
+            for job in jobs.get("jobs", []):
                 job["_sdc_repository"] = repo_path
                 job["actor_id"] = job.get("actor", {}).get("id")
                 job["actor_login"] = job.get("actor", {}).get("login")
