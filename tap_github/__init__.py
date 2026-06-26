@@ -1079,7 +1079,7 @@ def get_all_organization_members(org, schemas, repo_path, state, mdata):
 
 
 def get_all_team_members(team_slug, schemas, repo_path, state, mdata):
-    org = repo_path.split("/")[0]
+    org = repo_path.split("/")[0] if repo_path else organization
     with metrics.record_counter("team_members") as counter:
         for response in authed_get_all_pages(
             "team_members",
@@ -1106,7 +1106,7 @@ def get_all_team_members(team_slug, schemas, repo_path, state, mdata):
 
 
 def get_all_team_memberships(team_slug, schemas, repo_path, state, mdata):
-    org = repo_path.split("/")[0]
+    org = repo_path.split("/")[0] if repo_path else organization
     for response in authed_get_all_pages(
         "team_members",
         api_base_url + "/orgs/{}/teams/{}/members?sort=created_at&direction=desc".format(
@@ -2842,14 +2842,6 @@ def main():
     global is_nango_token
     global nango_provider_config_key
     global api_base_url
-
-    # TEST HOOK: force a failure to exercise the extractor's error reporting.
-    # Set TAP_FORCE_ERROR=1 to make the tap raise immediately. Dormant (no
-    # effect) when the var is unset, so this is safe to leave on master.
-    if os.getenv("TAP_FORCE_ERROR"):
-        raise RuntimeError(
-            "TAP_FORCE_ERROR set: simulated tap failure for error-reporting test."
-        )
 
     # Store config path for later use
     parser = argparse.ArgumentParser()
