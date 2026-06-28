@@ -265,10 +265,8 @@ def raise_for_error(resp, source, remaining):
         )
         # The workflow run timing/usage endpoint 404s routinely on GHES (usage
         # data isn't always available), and it's called once per run, so logging
-        # at info floods the logs. Keep it at debug; other 404s stay at info.
-        if source == "workflow_run_details":
-            logger.debug(message)
-        else:
+        # would flood the logs. Stay silent for it; other 404s stay at info.
+        if source != "workflow_run_details":
             logger.info(message)
         # don't raise a NotFoundException
         return None
@@ -429,9 +427,14 @@ def refresh_token_if_expired():
 def authed_get(source, url, headers={}):
     refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
-        logger.info("Making request to %s", url)
+        # The workflow run timing endpoint is hit once per run and would otherwise
+        # flood the logs with two info lines per call, so stay silent for it.
+        quiet = source == "workflow_run_details"
+        if not quiet:
+            logger.info("Making request to %s", url)
         resp = session.request(method="get", url=url, headers=headers, timeout=get_request_timeout())
-        logger.info("Request received status code %s", resp.status_code)
+        if not quiet:
+            logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
             if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
                 timer.tags[metrics.Tag.http_status_code] = resp.status_code
