@@ -266,8 +266,6 @@ def raise_for_error(resp, source, remaining):
         # The workflow run timing/usage endpoint 404s routinely on GHES (usage
         # data isn't always available), and it's called once per run, so logging
         # would flood the logs. Stay silent for it; other 404s stay at info.
-        if source != "workflow_run_details":
-            logger.info(message)
         # don't raise a NotFoundException
         return None
 
