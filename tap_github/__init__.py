@@ -263,7 +263,13 @@ def raise_for_error(resp, source, remaining):
         message = "HTTP-error-code: 404, Error: {}. Please refer '{}' for more details.".format(
             details, response_json.get("documentation_url")
         )
-        logger.info(message)
+        # The workflow run timing/usage endpoint 404s routinely on GHES (usage
+        # data isn't always available), and it's called once per run, so logging
+        # at info floods the logs. Keep it at debug; other 404s stay at info.
+        if source == "workflow_run_details":
+            logger.debug(message)
+        else:
+            logger.info(message)
         # don't raise a NotFoundException
         return None
 
@@ -2333,7 +2339,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
             for artifact in artifacts.get("artifacts", []):
                 if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
                     return state
-                
+
                 artifact["_sdc_repository"] = repo_path
                 artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
                 with singer.Transformer() as transformer:
