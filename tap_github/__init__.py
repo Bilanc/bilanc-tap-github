@@ -265,7 +265,11 @@ def raise_for_error(resp, source, remaining):
         )
         # The workflow run timing/usage endpoint 404s routinely on GHES (usage
         # data isn't always available), and it's called once per run, so logging
-        # would flood the logs. Stay silent for it; other 404s stay at info.
+        # at info floods the logs. Keep it at debug; other 404s stay at info.
+        if source == "workflow_run_details":
+            logger.debug(message)
+        else:
+            logger.info(message)
         # don't raise a NotFoundException
         return None
 
@@ -425,14 +429,9 @@ def refresh_token_if_expired():
 def authed_get(source, url, headers={}):
     refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
-        # The workflow run timing endpoint is hit once per run and would otherwise
-        # flood the logs with two info lines per call, so stay silent for it.
-        quiet = source == "workflow_run_details"
-        if not quiet:
-            logger.info("Making request to %s", url)
+        logger.info("Making request to %s", url)
         resp = session.request(method="get", url=url, headers=headers, timeout=get_request_timeout())
-        if not quiet:
-            logger.info("Request received status code %s", resp.status_code)
+        logger.info("Request received status code %s", resp.status_code)
         if resp.status_code != 200:
             if source == COPILOT_USER_METRICS_STREAM and resp.status_code == 204:
                 timer.tags[metrics.Tag.http_status_code] = resp.status_code
@@ -949,6 +948,9 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
             ),
         ):
             teams = response.json()
+            if not isinstance(teams, list):
+                logger.warning("Expected list of teams but got %s, skipping", type(teams).__name__)
+                continue
             extraction_time = singer.utils.now()
 
             for r in teams:
@@ -1053,6 +1055,9 @@ def get_all_organization_outside_collaborators(org, schemas, repo_path, state, m
             ),
         ):
             organization_outside_collaborators = response.json()
+            if not isinstance(organization_outside_collaborators, list):
+                logger.warning("Expected list of organization_outside_collaborators but got %s, skipping", type(organization_outside_collaborators).__name__)
+                continue
             for r in organization_outside_collaborators:
                 r["org_id"] = org["id"]
                 r["org_name"] = org.get("login", "")
@@ -1080,6 +1085,9 @@ def get_all_organization_members(org, schemas, repo_path, state, mdata):
             ),
         ):
             organization_members = response.json()
+            if not isinstance(organization_members, list):
+                logger.warning("Expected list of organization_members but got %s, skipping", type(organization_members).__name__)
+                continue
             for r in organization_members:
                 r["org_id"] = org["id"]
                 r["org_name"] = org.get("login", "")
@@ -1108,6 +1116,9 @@ def get_all_team_members(team_slug, schemas, repo_path, state, mdata):
             ),
         ):
             team_members = response.json()
+            if not isinstance(team_members, list):
+                logger.warning("Expected list of team_members but got %s, skipping", type(team_members).__name__)
+                continue
             for r in team_members:
                 r["_sdc_repository"] = repo_path
                 r["team_slug"] = team_slug
@@ -1134,6 +1145,9 @@ def get_all_team_memberships(team_slug, schemas, repo_path, state, mdata):
         ),
     ):
         team_members = response.json()
+        if not isinstance(team_members, list):
+            logger.warning("Expected list of team_members but got %s, skipping", type(team_members).__name__)
+            continue
         with metrics.record_counter("team_memberships") as counter:
             for r in team_members:
                 username = r["login"]
@@ -1169,6 +1183,9 @@ def get_all_issue_events(schemas, repo_path, state, mdata, start_date):
             ),
         ):
             events = response.json()
+            if not isinstance(events, list):
+                logger.warning("Expected list of issue_events but got %s, skipping", type(events).__name__)
+                continue
             extraction_time = singer.utils.now()
             for event in events:
                 event["_sdc_repository"] = repo_path
@@ -1224,6 +1241,9 @@ def get_all_events(schemas, repo_path, state, mdata, start_date):
             ),
         ):
             events = response.json()
+            if not isinstance(events, list):
+                logger.warning("Expected list of events but got %s, skipping", type(events).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in events:
                 r["_sdc_repository"] = repo_path
@@ -1281,6 +1301,9 @@ def get_all_issue_milestones(schemas, repo_path, state, mdata, start_date):
             ),
         ):
             milestones = response.json()
+            if not isinstance(milestones, list):
+                logger.warning("Expected list of issue_milestones but got %s, skipping", type(milestones).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in milestones:
                 r["_sdc_repository"] = repo_path
@@ -1325,6 +1348,9 @@ def get_all_issue_labels(schemas, repo_path, state, mdata, _start_date):
             "issue_labels", api_base_url + "/repos/{}/labels".format(repo_path)
         ):
             issue_labels = response.json()
+            if not isinstance(issue_labels, list):
+                logger.warning("Expected list of issue_labels but got %s, skipping", type(issue_labels).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in issue_labels:
                 r["_sdc_repository"] = repo_path
@@ -1360,6 +1386,9 @@ def get_all_commit_comments(schemas, repo_path, state, mdata, start_date):
             ),
         ):
             commit_comments = response.json()
+            if not isinstance(commit_comments, list):
+                logger.warning("Expected list of commit_comments but got %s, skipping", type(commit_comments).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in commit_comments:
                 r["_sdc_repository"] = repo_path
@@ -1411,6 +1440,9 @@ def get_all_projects(schemas, repo_path, state, mdata, start_date):
             {"Accept": "application/vnd.github.inertia-preview+json"},
         ):
             projects = response.json()
+            if not isinstance(projects, list):
+                logger.warning("Expected list of projects but got %s, skipping", type(projects).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in projects:
                 r["_sdc_repository"] = repo_path
@@ -1508,6 +1540,9 @@ def get_all_project_cards(column_id, schemas, repo_path, state, mdata, start_dat
             ),
         ):
             project_cards = response.json()
+            if not isinstance(project_cards, list):
+                logger.warning("Expected list of project_cards but got %s, skipping", type(project_cards).__name__)
+                continue
             for r in project_cards:
                 r["_sdc_repository"] = repo_path
 
@@ -1550,6 +1585,9 @@ def get_all_project_columns(project_id, schemas, repo_path, state, mdata, start_
             ),
         ):
             project_columns = response.json()
+            if not isinstance(project_columns, list):
+                logger.warning("Expected list of project_columns but got %s, skipping", type(project_columns).__name__)
+                continue
             for r in project_columns:
                 r["_sdc_repository"] = repo_path
 
@@ -1588,6 +1626,9 @@ def get_all_releases(schemas, repo_path, state, mdata, _start_date):
             ),
         ):
             releases = response.json()
+            if not isinstance(releases, list):
+                logger.warning("Expected list of releases but got %s, skipping", type(releases).__name__)
+                continue
             extraction_time = singer.utils.now()
             for r in releases:
                 r["_sdc_repository"] = repo_path
@@ -1628,6 +1669,9 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                 ),
             ):
                 pull_requests = response.json()
+                if not isinstance(pull_requests, list):
+                    logger.warning("Expected list of pull_requests but got %s, skipping", type(pull_requests).__name__)
+                    continue
                 extraction_time = singer.utils.now()
                 for pr in pull_requests:
 
@@ -1799,6 +1843,9 @@ def get_reviews_for_pr(pr_number, schema, repo_path, state, mdata):
         api_base_url + "/repos/{}/pulls/{}/reviews".format(repo_path, pr_number),
     ):
         reviews = response.json()
+        if not isinstance(reviews, list):
+            logger.warning("Expected list of reviews but got %s, skipping", type(reviews).__name__)
+            continue
         for review in reviews:
             review["_sdc_repository"] = repo_path
             add_insert_timestamp(review)
@@ -1819,6 +1866,9 @@ def get_review_comments_for_pr(pr_number, schema, repo_path, state, mdata):
         ),
     ):
         review_comments = response.json()
+        if not isinstance(review_comments, list):
+            logger.warning("Expected list of review_comments but got %s, skipping", type(review_comments).__name__)
+            continue
         for comment in review_comments:
             comment["_sdc_repository"] = repo_path
             add_insert_timestamp(comment)
@@ -1840,6 +1890,9 @@ def get_commits_for_pr(pr_number, pr_id, schema, repo_path, state, mdata):
     ):
 
         commit_data = response.json()
+        if not isinstance(commit_data, list):
+            logger.warning("Expected list of pr_commits but got %s, skipping", type(commit_data).__name__)
+            continue
         for commit in commit_data:
             commit["_sdc_repository"] = repo_path
             commit["pr_number"] = pr_number
@@ -1875,6 +1928,9 @@ def get_pull_request_files(pr_number, pr_id, schema, repo_path, state, mdata):
         api_base_url + "/repos/{}/pulls/{}/files".format(repo_path, pr_number),
     ):
         file_data = response.json()
+        if not isinstance(file_data, list):
+            logger.warning("Expected list of pull_request_files but got %s, skipping", type(file_data).__name__)
+            continue
         # Github has a limit of 3000 files per PR, after which empty arrays are returned
         # Break early in that case
         if not file_data:
@@ -1904,6 +1960,9 @@ def get_all_assignees(schema, repo_path, state, mdata, _start_date):
             "assignees", api_base_url + "/repos/{}/assignees".format(repo_path)
         ):
             assignees = response.json()
+            if not isinstance(assignees, list):
+                logger.warning("Expected list of assignees but got %s, skipping", type(assignees).__name__)
+                continue
             extraction_time = singer.utils.now()
             for assignee in assignees:
                 assignee["_sdc_repository"] = repo_path
@@ -1937,6 +1996,9 @@ def get_all_collaborators(schema, repo_path, state, mdata, _start_date):
         else:
             for response in responses:
                 collaborators = response.json()
+                if not isinstance(collaborators, list):
+                    logger.warning("Expected list of collaborators but got %s, skipping", type(collaborators).__name__)
+                    continue
                 extraction_time = singer.utils.now()
                 for collaborator in collaborators:
                     collaborator["_sdc_repository"] = repo_path
@@ -2092,6 +2154,9 @@ def get_all_comments(schema, repo_path, state, mdata, start_date):
             ),
         ):
             comments = response.json()
+            if not isinstance(comments, list):
+                logger.warning("Expected list of comments but got %s, skipping", type(comments).__name__)
+                continue
             extraction_time = singer.utils.now()
             for comment in comments:
                 comment["_sdc_repository"] = repo_path
@@ -2125,6 +2190,9 @@ def get_all_stargazers(schema, repo_path, state, mdata, _start_date):
             stargazers_headers,
         ):
             stargazers = response.json()
+            if not isinstance(stargazers, list):
+                logger.warning("Expected list of stargazers but got %s, skipping", type(stargazers).__name__)
+                continue
             extraction_time = singer.utils.now()
             for stargazer in stargazers:
                 user_id = stargazer["user"]["id"]
@@ -2155,6 +2223,9 @@ def get_all_deployments(schema, repo_path, state, mdata, _start_date):
             deployments_headers,
         ):
             deployments = response.json()
+            if not isinstance(deployments, list):
+                logger.warning("Expected list of deployments but got %s, skipping", type(deployments).__name__)
+                continue
             extraction_time = singer.utils.now()
             for deployment in deployments:
                 deployment["_sdc_repository"] = repo_path
@@ -2524,7 +2595,11 @@ def list_app_installations(config):
     while url:
         resp = requests.get(url, headers=headers, timeout=get_request_timeout())
         resp.raise_for_status()
-        for inst in resp.json():
+        page = resp.json()
+        if not isinstance(page, list):
+            logger.warning("Expected list of app installations but got %s, skipping", type(page).__name__)
+            page = []
+        for inst in page:
             account = inst.get("account") or {}
             installations.append(
                 {
