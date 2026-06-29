@@ -647,7 +647,7 @@
     "milestone": {
       "type": [
         "null",
-        "string"
+        "object"
       ]
     },
     "draft": {
