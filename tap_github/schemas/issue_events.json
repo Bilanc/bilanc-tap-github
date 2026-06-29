@@ -414,7 +414,7 @@
         "performed_via_github_app": {
           "type": [
             "null",
-            "string"
+            "object"
           ]
         },
         "assignee": {
@@ -956,7 +956,7 @@
     "performed_via_github_app": {
       "type": [
         "null",
-        "string"
+        "object"
       ]
     },
     "_sdc_repository": {

@@ -647,7 +647,7 @@
     "milestone": {
       "type": [
         "null",
-        "string"
+        "object"
       ]
     },
     "draft": {
@@ -2308,7 +2308,7 @@
     "auto_merge": {
       "type": [
         "null",
-        "string"
+        "object"
       ]
     },
     "active_lock_reason": {
