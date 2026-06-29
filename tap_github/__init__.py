@@ -260,7 +260,7 @@ def raise_for_error(resp, source, remaining):
             )
             if custom_message:
                 details = custom_message
-        message = "HTTP-error-code: 404, Error: {}. Please refer '{}' for more details.".format(
+        message = "HTTP-error-code: 404, {}. Please refer '{}' for more details.".format(
             details, response_json.get("documentation_url")
         )
         # The workflow run timing/usage endpoint 404s routinely on GHES (usage
@@ -299,7 +299,7 @@ def raise_for_error(resp, source, remaining):
     if 500 <= error_code < 600:
         raise RetriableServerError(resp.text)
 
-    message = "HTTP-error-code: {}, Error: {}".format(
+    message = "HTTP-error-code: {}, {}".format(
         error_code,
         (
             ERROR_CODE_EXCEPTION_MAPPING.get(error_code, {}).get(
