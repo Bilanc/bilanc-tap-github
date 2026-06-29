@@ -2758,6 +2758,11 @@ RUN_ONCE_STREAMS = {
     COPILOT_USER_METRICS_STREAM,
 }
 
+# Tracks which stream schemas have already been emitted so each SCHEMA message
+# is written at most once per process, rather than once per repo (and once per
+# installation in the GitHub App path).
+_schemas_written = set()
+
 
 def do_sync(config, state, catalog, skip_state_init=False):
     access_token = config["access_token"]
@@ -2828,7 +2833,9 @@ def do_sync(config, state, catalog, skip_state_init=False):
 
             # if stream is selected, write schema and sync
             if stream_id in selected_stream_ids:
-                singer.write_schema(stream_id, stream_schema, stream["key_properties"])
+                if stream_id not in _schemas_written:
+                    singer.write_schema(stream_id, stream_schema, stream["key_properties"])
+                    _schemas_written.add(stream_id)
 
                 # get sync function and any sub streams
                 sync_func = SYNC_FUNCTIONS[stream_id]
@@ -2849,11 +2856,13 @@ def do_sync(config, state, catalog, skip_state_init=False):
                             sub_stream = get_stream_from_catalog(sub_stream_id, catalog)
                             stream_schemas[sub_stream_id] = sub_stream["schema"]
                             stream_mdata[sub_stream_id] = sub_stream["metadata"]
-                            singer.write_schema(
-                                sub_stream_id,
-                                sub_stream["schema"],
-                                sub_stream["key_properties"],
-                            )
+                            if sub_stream_id not in _schemas_written:
+                                singer.write_schema(
+                                    sub_stream_id,
+                                    sub_stream["schema"],
+                                    sub_stream["key_properties"],
+                                )
+                                _schemas_written.add(sub_stream_id)
 
                     # sync stream and it's sub streams
                     state = sync_func(
