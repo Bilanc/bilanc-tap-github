@@ -2337,19 +2337,22 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
                             {"since": singer.utils.strftime(singer.utils.now())},
                         )
                 run["_sdc_repository"] = repo_path
-                run["actor_id"] = run.get("actor", {}).get("id")
-                run["actor_login"] = run.get("actor", {}).get("login")
-                run["actor_type"] = run.get("actor", {}).get("type")
-                run["pull_request_ids"] = [pr["id"] for pr in run.get("pull_requests", []) if pr.get("id")]
-                run["head_commit_id"] = run.get("head_commit", {}).get("id")
-                run["head_commit_message"] = run.get("head_commit", {}).get("message")
-                run["head_commit_timestamp"] = run.get("head_commit", {}).get("timestamp")
+                actor = run.get("actor") or {}
+                run["actor_id"] = actor.get("id")
+                run["actor_login"] = actor.get("login")
+                run["actor_type"] = actor.get("type")
+                run["pull_request_ids"] = [pr["id"] for pr in (run.get("pull_requests") or []) if pr.get("id")]
+                head_commit = run.get("head_commit") or {}
+                run["head_commit_id"] = head_commit.get("id")
+                run["head_commit_message"] = head_commit.get("message")
+                run["head_commit_timestamp"] = head_commit.get("timestamp")
                 timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers)
                 timing_json = timing.json()
                 run["run_duration_ms"] = timing_json.get("run_duration_ms")
-                run["ubuntu_run_duration_ms"] = timing_json.get("billable", {}).get("UBUNTU", {}).get("total_ms")
-                run["windows_run_duration_ms"] = timing_json.get("billable", {}).get("WINDOWS", {}).get("total_ms")
-                run["macos_run_duration_ms"] = timing_json.get("billable", {}).get("MACOS", {}).get("total_ms")
+                billable = timing_json.get("billable") or {}
+                run["ubuntu_run_duration_ms"] = (billable.get("UBUNTU") or {}).get("total_ms")
+                run["windows_run_duration_ms"] = (billable.get("WINDOWS") or {}).get("total_ms")
+                run["macos_run_duration_ms"] = (billable.get("MACOS") or {}).get("total_ms")
                 add_insert_timestamp(run)
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
@@ -2371,9 +2374,10 @@ def get_jobs_for_workflow_run(run_id, schema, repo_path, state, mdata):
             jobs = response.json()
             for job in jobs.get("jobs", []):
                 job["_sdc_repository"] = repo_path
-                job["actor_id"] = job.get("actor", {}).get("id")
-                job["actor_login"] = job.get("actor", {}).get("login")
-                job["actor_type"] = job.get("actor", {}).get("type")
+                job_actor = job.get("actor") or {}
+                job["actor_id"] = job_actor.get("id")
+                job["actor_login"] = job_actor.get("login")
+                job["actor_type"] = job_actor.get("type")
                 add_insert_timestamp(job)
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
