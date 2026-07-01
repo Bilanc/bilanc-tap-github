@@ -2873,7 +2873,13 @@ def do_sync(config, state, catalog, skip_state_init=False):
                         stream_schemas, repo, state, stream_mdata, start_date
                     )
 
-                singer.write_state(state)
+        # Emit state once per repo rather than after every stream. The state
+        # dict accumulates a bookmark for every (repo, stream) pair and only
+        # grows, so writing it inside the stream loop re-serialised the whole
+        # (ever-growing) map N*S times, producing quadratic output. Per-repo
+        # writes keep crash-safety at repo granularity while cutting the number
+        # of STATE messages by a factor of the selected-stream count.
+        singer.write_state(state)
 
     return state
 
