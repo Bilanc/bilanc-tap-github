@@ -2404,6 +2404,10 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
     else:
         bookmark_time = 0
 
+    # Bookmark from when the sync started rather than when it finished, so
+    # anything updated while we were paging is picked up on the next run.
+    sync_start_time = singer.utils.now()
+
     with metrics.record_counter("artifacts") as counter:
         for response in authed_get_all_pages(
             "artifacts",
@@ -2414,7 +2418,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
             extraction_time = singer.utils.now()
             for artifact in artifacts.get("artifacts", []):
                 if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
-                    return state
+                    continue
 
                 artifact["_sdc_repository"] = repo_path
                 artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
@@ -2426,6 +2430,12 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
                 singer.write_record("artifacts", rec, time_extracted=extraction_time)
                 counter.increment()
 
+    singer.write_bookmark(
+        state,
+        repo_path,
+        "artifacts",
+        {"since": singer.utils.strftime(sync_start_time)},
+    )
     return state
 
 
