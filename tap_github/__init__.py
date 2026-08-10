@@ -2418,13 +2418,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
             extraction_time = singer.utils.now()
             for artifact in artifacts.get("artifacts", []):
                 if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
-                    singer.write_bookmark(
-                        state,
-                        repo_path,
-                        "artifacts",
-                        {"since": singer.utils.strftime(sync_start_time)},
-                    )
-                    return state
+                    continue
 
                 artifact["_sdc_repository"] = repo_path
                 artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
