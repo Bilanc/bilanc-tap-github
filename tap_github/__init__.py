@@ -26,6 +26,27 @@ def add_insert_timestamp(record):
     return record
 
 
+def strip_null_chars(value):
+    """Recursively remove NUL characters from strings in a record.
+
+    Postgres cannot store \\u0000 in text or jsonb columns, and GitHub can return
+    them inside diff patches (e.g. commit/PR file contents), which fails the
+    target's whole COPY batch with UntranslatableCharacter.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "") if "\x00" in value else value
+    if isinstance(value, dict):
+        return {key: strip_null_chars(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [strip_null_chars(item) for item in value]
+    return value
+
+
+def write_record(stream_name, record, **kwargs):
+    """singer.write_record with NUL characters stripped from the record."""
+    singer.write_record(stream_name, strip_null_chars(record), **kwargs)
+
+
 session = requests.Session()
 logger = singer.get_logger()
 
@@ -911,7 +932,7 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     rec = transformer.transform(
                         record, schema, metadata=metadata.to_map(mdata)
                     )
-                singer.write_record(
+                write_record(
                     COPILOT_USER_METRICS_STREAM,
                     rec,
                     time_extracted=extraction_time,
@@ -963,7 +984,7 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
                         r, schemas["teams"], metadata=metadata.to_map(mdata["teams"])
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("teams", rec, time_extracted=extraction_time)
+                write_record("teams", rec, time_extracted=extraction_time)
                 counter.increment()
 
                 if schemas.get("team_members"):
@@ -974,7 +995,7 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
                         state,
                         mdata["team_members"],
                     ):
-                        singer.write_record(
+                        write_record(
                             "team_members",
                             team_members_rec,
                             time_extracted=extraction_time,
@@ -988,7 +1009,7 @@ def get_all_teams(schemas, repo_path, state, mdata, _start_date):
                         state,
                         mdata["team_memberships"],
                     ):
-                        singer.write_record(
+                        write_record(
                             "team_memberships",
                             team_memberships_rec,
                             time_extracted=extraction_time,
@@ -1015,7 +1036,7 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
                 metadata=metadata.to_map(mdata["organizations"]),
             )
         add_insert_timestamp(rec)
-        singer.write_record("organizations", rec, time_extracted=extraction_time)
+        write_record("organizations", rec, time_extracted=extraction_time)
         counter.increment()
         if schemas.get("organization_members"):
             for team_members_rec in get_all_organization_members(
@@ -1025,7 +1046,7 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
                 state,
                 mdata["organization_members"],
             ):
-                singer.write_record(
+                write_record(
                     "organization_members",
                     team_members_rec,
                     time_extracted=extraction_time,
@@ -1039,7 +1060,7 @@ def get_all_organizations(schemas, repo_path, state, mdata, _start_date):
                 state,
                 mdata["organization_outside_collaborators"],
             ):
-                singer.write_record(
+                write_record(
                     "organization_outside_collaborators",
                     org_outside_collab_rec,
                     time_extracted=extraction_time,
@@ -1210,7 +1231,7 @@ def get_all_issue_events(schemas, repo_path, state, mdata, start_date):
                         event, schemas, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("issue_events", rec, time_extracted=extraction_time)
+                write_record("issue_events", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -1269,7 +1290,7 @@ def get_all_events(schemas, repo_path, state, mdata, start_date):
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("events", rec, time_extracted=extraction_time)
+                write_record("events", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -1324,7 +1345,7 @@ def get_all_issue_milestones(schemas, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
-                singer.write_record(
+                write_record(
                     "issue_milestones", rec, time_extracted=extraction_time
                 )
                 singer.write_bookmark(
@@ -1360,7 +1381,7 @@ def get_all_issue_labels(schemas, repo_path, state, mdata, _start_date):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
-                singer.write_record("issue_labels", rec, time_extracted=extraction_time)
+                write_record("issue_labels", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -1409,7 +1430,7 @@ def get_all_commit_comments(schemas, repo_path, state, mdata, start_date):
                     rec = transformer.transform(
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
-                singer.write_record(
+                write_record(
                     "commit_comments", rec, time_extracted=extraction_time
                 )
                 singer.write_bookmark(
@@ -1465,7 +1486,7 @@ def get_all_projects(schemas, repo_path, state, mdata, start_date):
                         schemas["projects"],
                         metadata=metadata.to_map(mdata["projects"]),
                     )
-                singer.write_record("projects", rec, time_extracted=extraction_time)
+                write_record("projects", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -1486,7 +1507,7 @@ def get_all_projects(schemas, repo_path, state, mdata, start_date):
                         mdata["project_columns"],
                         start_date,
                     ):
-                        singer.write_record(
+                        write_record(
                             "project_columns",
                             project_column_rec,
                             time_extracted=extraction_time,
@@ -1509,7 +1530,7 @@ def get_all_projects(schemas, repo_path, state, mdata, start_date):
                                 mdata["project_cards"],
                                 start_date,
                             ):
-                                singer.write_record(
+                                write_record(
                                     "project_cards",
                                     project_card_rec,
                                     time_extracted=extraction_time,
@@ -1639,7 +1660,7 @@ def get_all_releases(schemas, repo_path, state, mdata, _start_date):
                         r, schemas, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("releases", rec, time_extracted=extraction_time)
+                write_record("releases", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -1704,7 +1725,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                         raise
 
                     add_insert_timestamp(rec)
-                    singer.write_record(
+                    write_record(
                         "pull_requests", rec, time_extracted=extraction_time
                     )
                     singer.write_bookmark(
@@ -1724,7 +1745,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                             state,
                             mdata["reviews"],
                         ):
-                            singer.write_record(
+                            write_record(
                                 "reviews", review_rec, time_extracted=extraction_time
                             )
                             singer.write_bookmark(
@@ -1745,7 +1766,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                             state,
                             mdata["review_comments"],
                         ):
-                            singer.write_record(
+                            write_record(
                                 "review_comments",
                                 review_comment_rec,
                                 time_extracted=extraction_time,
@@ -1766,7 +1787,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                             state,
                             mdata["pr_commits"],
                         ):
-                            singer.write_record(
+                            write_record(
                                 "pr_commits", pr_commit, time_extracted=extraction_time
                             )
                             singer.write_bookmark(
@@ -1785,7 +1806,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                             state,
                             mdata["pull_request_files"],
                         ):
-                            singer.write_record(
+                            write_record(
                                 "pull_request_files",
                                 pr_file,
                                 time_extracted=extraction_time,
@@ -1806,7 +1827,7 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
                             mdata["pull_request_details"],
                         )
                         if pull_request_detail:
-                            singer.write_record(
+                            write_record(
                                 "pull_request_details",
                                 pull_request_detail,
                                 time_extracted=extraction_time,
@@ -1971,7 +1992,7 @@ def get_all_assignees(schema, repo_path, state, mdata, _start_date):
                         assignee, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("assignees", rec, time_extracted=extraction_time)
+                write_record("assignees", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -2007,7 +2028,7 @@ def get_all_collaborators(schema, repo_path, state, mdata, _start_date):
                             collaborator, schema, metadata=metadata.to_map(mdata)
                         )
                     add_insert_timestamp(rec)
-                    singer.write_record(
+                    write_record(
                         "collaborators", rec, time_extracted=extraction_time
                     )
                     counter.increment()
@@ -2082,7 +2103,7 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
                         commit, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("commits", rec, time_extracted=extraction_time)
+                write_record("commits", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -2124,7 +2145,7 @@ def get_all_issues(schema, repo_path, state, mdata, start_date):
                         issue, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("issues", rec, time_extracted=extraction_time)
+                write_record("issues", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -2165,7 +2186,7 @@ def get_all_comments(schema, repo_path, state, mdata, start_date):
                         comment, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("comments", rec, time_extracted=extraction_time)
+                write_record("comments", rec, time_extracted=extraction_time)
                 singer.write_bookmark(
                     state,
                     repo_path,
@@ -2203,7 +2224,7 @@ def get_all_stargazers(schema, repo_path, state, mdata, _start_date):
                     )
                 rec["user_id"] = user_id
                 add_insert_timestamp(rec)
-                singer.write_record("stargazers", rec, time_extracted=extraction_time)
+                write_record("stargazers", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -2234,7 +2255,7 @@ def get_all_deployments(schema, repo_path, state, mdata, _start_date):
                         deployment, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("deployments", rec, time_extracted=extraction_time)
+                write_record("deployments", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -2270,7 +2291,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                         mdata,
                         start_date,
                     ):
-                        singer.write_record(
+                        write_record(
                             "workflow_runs",
                             workflow_run,
                             time_extracted=extraction_time,
@@ -2286,7 +2307,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                         workflow, schemas["workflows"], metadata=metadata.to_map(mdata["workflows"])
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("workflows", rec, time_extracted=extraction_time)
+                write_record("workflows", rec, time_extracted=extraction_time)
                 counter.increment()
 
     return state
@@ -2327,7 +2348,7 @@ def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata
                         state,
                         mdata["workflow_run_jobs"],
                     ):
-                        singer.write_record(
+                        write_record(
                             "workflow_run_jobs", job, time_extracted=singer.utils.now()
                         )
                         singer.write_bookmark(
@@ -2427,7 +2448,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
                         artifact, schema, metadata=metadata.to_map(mdata)
                     )
                 add_insert_timestamp(rec)
-                singer.write_record("artifacts", rec, time_extracted=extraction_time)
+                write_record("artifacts", rec, time_extracted=extraction_time)
                 counter.increment()
 
     singer.write_bookmark(
