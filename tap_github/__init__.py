@@ -2268,6 +2268,17 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
 
     workflows_headers = {"Accept": "application/vnd.github.v3.json"}
 
+    # The workflow_runs bookmark is ONE value per repo, shared by every workflow
+    # in it. Resolve it once, before the workflow loop, and only advance it after
+    # every workflow has been walked. Reading it per workflow and advancing it
+    # per record (the previous behaviour) meant the first workflow in the loop
+    # got a full incremental pull and every later workflow saw a bookmark of
+    # "now", stopping on its first page -- so ~1% of runs were captured for all
+    # but the most recently updated workflow in each repo.
+    runs_bookmark_time = get_workflow_runs_bookmark_time(state, repo_path, start_date)
+    runs_sync_started = singer.utils.now()
+    synced_any_runs = False
+
     with metrics.record_counter("workflows") as counter:
         for response in authed_get_all_pages(
             "workflows",
@@ -2283,6 +2294,7 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                 workflow_id = workflow["id"]
                 workflow["_sdc_repository"] = repo_path
                 if schemas.get("workflow_runs"):
+                    synced_any_runs = True
                     for workflow_run in get_workflow_runs_for_workflow(
                         workflow_id,
                         schemas,
@@ -2290,17 +2302,12 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                         state,
                         mdata,
                         start_date,
+                        bookmark_time=runs_bookmark_time,
                     ):
                         write_record(
                             "workflow_runs",
                             workflow_run,
                             time_extracted=extraction_time,
-                        )
-                        singer.write_bookmark(
-                            state,
-                            repo_path,
-                            "workflow_runs",
-                            {"since": singer.utils.strftime(extraction_time)},
                         )
                 with singer.Transformer() as transformer:
                     rec = transformer.transform(
@@ -2310,18 +2317,39 @@ def get_all_workflows(schemas, repo_path, state, mdata, start_date):
                 write_record("workflows", rec, time_extracted=extraction_time)
                 counter.increment()
 
+    if synced_any_runs:
+        # Bookmark the moment this repo's sync STARTED, not finished: a run that
+        # completed while we were paging is re-fetched next time (dedup'd on id)
+        # rather than lost in the gap.
+        singer.write_bookmark(
+            state,
+            repo_path,
+            "workflow_runs",
+            {"since": singer.utils.strftime(runs_sync_started)},
+        )
+
     return state
 
 
-def get_workflow_runs_for_workflow(workflow_id, schemas, repo_path, state, mdata, start_date):
+def get_workflow_runs_bookmark_time(state, repo_path, start_date):
+    """The repo-wide workflow_runs cutoff as a datetime, or 0 when unbounded."""
     bookmark_value = get_bookmark(
         state, repo_path, "workflow_runs", "since", start_date
     )
     if bookmark_value:
-        bookmark_time = singer.utils.strptime_to_utc(bookmark_value)
-    else:
-        bookmark_time = 0
-    
+        return singer.utils.strptime_to_utc(bookmark_value)
+    return 0
+
+
+def get_workflow_runs_for_workflow(
+    workflow_id, schemas, repo_path, state, mdata, start_date, bookmark_time=None
+):
+    # The caller (get_all_workflows) resolves the repo-wide bookmark once and
+    # passes it in so every workflow in the repo is cut off at the same instant.
+    # Falling back to a lookup here keeps direct callers working.
+    if bookmark_time is None:
+        bookmark_time = get_workflow_runs_bookmark_time(state, repo_path, start_date)
+
     workflow_runs_headers = {"Accept": "application/vnd.github.v3.json"}
     with metrics.record_counter("workflow_runs") as counter:
         for response in authed_get_all_pages(
