@@ -68,10 +68,27 @@ class TestCopilotDayClamp(unittest.TestCase):
         expected = datetime.utcnow().date() - timedelta(days=tap_github.COPILOT_REPORT_MAX_AGE_DAYS)
         self.assertEqual(requested_day(mocked_get.call_args), expected.strftime("%Y-%m-%d"))
 
-    def test_http_400_skips_stream_without_failing_sync(self, mocked_get, mocked_bookmark):
-        mocked_get.return_value = MockResponse(
-            400, {"message": "Invalid day parameter. Expected format: YYYY-MM-DD"}
+    def test_invalid_day_400_skips_that_day_and_continues(self, mocked_get, mocked_bookmark):
+        start = datetime.utcnow().date() - timedelta(days=3)
+        mocked_get.side_effect = [
+            MockResponse(400, {"message": "Invalid day parameter. Expected format: YYYY-MM-DD"}),
+            MockResponse(403, {"message": "forbidden"}),
+        ]
+        state = {}
+
+        result = tap_github.get_copilot_user_metrics_1_day(
+            SCHEMA, None, state, MDATA, start.strftime("%Y-%m-%dT00:00:00Z")
         )
+
+        self.assertIs(result, state)
+        self.assertEqual(
+            [requested_day(c) for c in mocked_get.call_args_list],
+            [start.strftime("%Y-%m-%d"), (start + timedelta(days=1)).strftime("%Y-%m-%d")],
+        )
+        mocked_bookmark.assert_not_called()
+
+    def test_other_400_skips_stream_without_failing_sync(self, mocked_get, mocked_bookmark):
+        mocked_get.return_value = MockResponse(400, {"message": "Problems parsing JSON"})
         state = {}
 
         result = tap_github.get_copilot_user_metrics_1_day(

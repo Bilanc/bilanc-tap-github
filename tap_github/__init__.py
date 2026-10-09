@@ -106,6 +106,8 @@ VISITED_ORGS_IDS = set()
 COPILOT_USER_METRICS_STREAM = "copilot_user_metrics_1_day"
 # GitHub only serves Copilot daily reports for days within the last year.
 COPILOT_REPORT_MAX_AGE_DAYS = 364
+# Error message GitHub returns when `day` is outside that window.
+COPILOT_INVALID_DAY_MESSAGE = "invalid day parameter"
 
 
 class GithubException(Exception):
@@ -843,8 +845,18 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     message = response.json().get("message")
                 except Exception:
                     message = None
+                if message and COPILOT_INVALID_DAY_MESSAGE in message.lower():
+                    # GitHub rejected this specific day (outside its window);
+                    # move on so later, available days are still collected.
+                    logger.info(
+                        "GitHub rejected Copilot report day %s (%s); skipping day.",
+                        report_day,
+                        message,
+                    )
+                    current_day += timedelta(days=1)
+                    continue
                 logger.warning(
-                    "GitHub rejected Copilot report request for %s with HTTP 400 (%s); "
+                    "Copilot report metadata request for %s failed with HTTP 400 (%s); "
                     "skipping Copilot metrics for this run.",
                     report_day,
                     message or "no details",
