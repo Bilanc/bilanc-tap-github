@@ -2497,27 +2497,39 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
     # anything updated while we were paging is picked up on the next run.
     sync_start_time = singer.utils.now()
 
-    with metrics.record_counter("artifacts") as counter:
-        for response in authed_get_all_pages(
-            "artifacts",
-            api_base_url + "/repos/{}/actions/artifacts?per_page=100".format(repo_path),
-            artifacts_headers,
-        ):
-            artifacts = response.json()
-            extraction_time = singer.utils.now()
-            for artifact in artifacts.get("artifacts", []):
-                if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
-                    continue
+    try:
+        with metrics.record_counter("artifacts") as counter:
+            for response in authed_get_all_pages(
+                "artifacts",
+                api_base_url + "/repos/{}/actions/artifacts?per_page=100".format(repo_path),
+                artifacts_headers,
+            ):
+                artifacts = response.json()
+                extraction_time = singer.utils.now()
+                for artifact in artifacts.get("artifacts", []):
+                    if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
+                        continue
 
-                artifact["_sdc_repository"] = repo_path
-                artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
-                with singer.Transformer() as transformer:
-                    rec = transformer.transform(
-                        artifact, schema, metadata=metadata.to_map(mdata)
-                    )
-                add_insert_timestamp(rec)
-                write_record("artifacts", rec, time_extracted=extraction_time)
-                counter.increment()
+                    artifact["_sdc_repository"] = repo_path
+                    artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
+                    with singer.Transformer() as transformer:
+                        rec = transformer.transform(
+                            artifact, schema, metadata=metadata.to_map(mdata)
+                        )
+                    add_insert_timestamp(rec)
+                    write_record("artifacts", rec, time_extracted=extraction_time)
+                    counter.increment()
+    except RetriableServerError as e:
+        # GitHub can return 5xx for a single repo's artifacts endpoint for days
+        # on end. Artifacts are a non-critical stream, so skip this repo and
+        # leave its bookmark alone (so it's retried next run) instead of
+        # failing the whole sync and losing every other stream's progress.
+        logger.warning(
+            "Skipping artifacts for %s after exhausting retries on GitHub server error: %s",
+            repo_path,
+            e,
+        )
+        return state
 
     singer.write_bookmark(
         state,
