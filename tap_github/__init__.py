@@ -442,6 +442,7 @@ def refresh_token_if_expired():
     (
         requests.Timeout,
         requests.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
         ConnectionRefusedError,
         ConnectionResetError,
         APIRateLimitExceededError,
