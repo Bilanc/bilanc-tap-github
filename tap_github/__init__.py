@@ -483,11 +483,15 @@ def authed_get(source, url, headers={}):
         return resp
 
 
-def authed_get_all_pages(source, url, headers={}):
+def authed_get_all_pages(source, url, headers={}, raise_on_server_error=False):
     while True:
         try:
             r = authed_get(source, url, headers)
         except BadGatewayError as e:
+            if raise_on_server_error:
+                # Let the caller decide (e.g. skip the repo without bookmarking)
+                # instead of silently treating a truncated page set as complete.
+                raise
             logger.warning("Stopping stream %s after exhausting retries on 502: %s", source, e)
             return
         except UnprocessableError as e:
@@ -2503,6 +2507,7 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
                 "artifacts",
                 api_base_url + "/repos/{}/actions/artifacts?per_page=100".format(repo_path),
                 artifacts_headers,
+                raise_on_server_error=True,
             ):
                 artifacts = response.json()
                 extraction_time = singer.utils.now()
@@ -2520,10 +2525,11 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
                     write_record("artifacts", rec, time_extracted=extraction_time)
                     counter.increment()
     except RetriableServerError as e:
-        # GitHub can return 5xx for a single repo's artifacts endpoint for days
-        # on end. Artifacts are a non-critical stream, so skip this repo and
-        # leave its bookmark alone (so it's retried next run) instead of
-        # failing the whole sync and losing every other stream's progress.
+        # GitHub can return 5xx (incl. 502) for a single repo's artifacts
+        # endpoint for days on end. Artifacts are a non-critical stream, so skip
+        # this repo and leave its bookmark alone (so it's retried next run)
+        # instead of failing the whole sync and losing every other stream's
+        # progress, or bookmarking a truncated page set as complete.
         logger.warning(
             "Skipping artifacts for %s after exhausting retries on GitHub server error: %s",
             repo_path,
