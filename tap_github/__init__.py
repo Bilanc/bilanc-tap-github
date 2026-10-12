@@ -483,11 +483,19 @@ def authed_get(source, url, headers={}):
         return resp
 
 
+# Streams that catch an exhausted RetriableServerError themselves (skip the
+# repo without advancing its bookmark). For these, a 502 must propagate instead
+# of silently ending the page loop, or the stream would look complete.
+STREAMS_HANDLING_SERVER_ERRORS = {"artifacts"}
+
+
 def authed_get_all_pages(source, url, headers={}):
     while True:
         try:
             r = authed_get(source, url, headers)
         except BadGatewayError as e:
+            if source in STREAMS_HANDLING_SERVER_ERRORS:
+                raise
             logger.warning("Stopping stream %s after exhausting retries on 502: %s", source, e)
             return
         except UnprocessableError as e:
@@ -2435,8 +2443,16 @@ def get_workflow_runs_for_workflow(
                 run["head_commit_id"] = head_commit.get("id")
                 run["head_commit_message"] = head_commit.get("message")
                 run["head_commit_timestamp"] = head_commit.get("timestamp")
-                timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers)
-                timing_json = timing.json()
+                try:
+                    timing = authed_get("workflow_run_details", f"{run['url']}/timing", workflow_runs_headers)
+                    timing_json = timing.json()
+                except RetriableServerError as e:
+                    logger.warning(
+                        "Could not fetch timing for workflow run %s after exhausting retries: %s",
+                        run.get("id"),
+                        str(e)[:200],
+                    )
+                    timing_json = {}
                 run["run_duration_ms"] = timing_json.get("run_duration_ms")
                 billable = timing_json.get("billable") or {}
                 run["ubuntu_run_duration_ms"] = (billable.get("UBUNTU") or {}).get("total_ms")
@@ -2498,26 +2514,37 @@ def get_all_artifacts(schema, repo_path, state, mdata, start_date):
     sync_start_time = singer.utils.now()
 
     with metrics.record_counter("artifacts") as counter:
-        for response in authed_get_all_pages(
-            "artifacts",
-            api_base_url + "/repos/{}/actions/artifacts?per_page=100".format(repo_path),
-            artifacts_headers,
-        ):
-            artifacts = response.json()
-            extraction_time = singer.utils.now()
-            for artifact in artifacts.get("artifacts", []):
-                if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
-                    continue
+        try:
+            for response in authed_get_all_pages(
+                "artifacts",
+                api_base_url + "/repos/{}/actions/artifacts?per_page=100".format(repo_path),
+                artifacts_headers,
+            ):
+                artifacts = response.json()
+                extraction_time = singer.utils.now()
+                for artifact in artifacts.get("artifacts", []):
+                    if (bookmark_time and singer.utils.strptime_to_utc(artifact.get("updated_at")) < bookmark_time):
+                        continue
 
-                artifact["_sdc_repository"] = repo_path
-                artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
-                with singer.Transformer() as transformer:
-                    rec = transformer.transform(
-                        artifact, schema, metadata=metadata.to_map(mdata)
-                    )
-                add_insert_timestamp(rec)
-                write_record("artifacts", rec, time_extracted=extraction_time)
-                counter.increment()
+                    artifact["_sdc_repository"] = repo_path
+                    artifact["workflow_run_id"] = artifact.get("workflow_run", {}).get("id")
+                    with singer.Transformer() as transformer:
+                        rec = transformer.transform(
+                            artifact, schema, metadata=metadata.to_map(mdata)
+                        )
+                    add_insert_timestamp(rec)
+                    write_record("artifacts", rec, time_extracted=extraction_time)
+                    counter.increment()
+        except RetriableServerError as e:
+            # GitHub can keep answering 5xx for one repo's artifacts endpoint for
+            # days. Artifacts are not worth losing the whole sync over: skip the
+            # repo and leave its bookmark alone so it is retried next run.
+            logger.warning(
+                "Skipping artifacts for %s after exhausting retries on a GitHub server error: %s",
+                repo_path,
+                str(e)[:200],
+            )
+            return state
 
     singer.write_bookmark(
         state,
