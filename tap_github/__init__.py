@@ -257,6 +257,9 @@ def get_bookmark(state, repo, stream_name, bookmark_key, start_date):
     return None
 
 
+GITHUB_TIMEOUT_MESSAGE = "The request is taking too long to process"
+
+
 def raise_for_error(resp, source, remaining):
     error_code = resp.status_code
     try:
@@ -309,6 +312,14 @@ def raise_for_error(resp, source, remaining):
         # instead of crashing on one oversized commit.
         if source == "commit_details":
             return None
+        # GitHub also answers 422 when the query itself times out server-side
+        # (e.g. list-commits with `since` on a repo whose default branch has no
+        # recent commits, so the whole history is scanned). That is transient,
+        # so hand it to authed_get's backoff like a 5xx instead of failing.
+        if GITHUB_TIMEOUT_MESSAGE in str(details):
+            raise RetriableServerError(
+                "HTTP-error-code: {}, {}".format(error_code, details)
+            )
 
     if error_code == 403:
         if remaining == 0:
@@ -2113,49 +2124,67 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
         query_string = ""
 
     default_branch = get_default_branch(repo_path)
+    previous_bookmark = bookmarks.get_bookmark(state, repo_path, "commits")
 
-    with metrics.record_counter("commits") as counter:
-        for response in authed_get_all_pages(
-            "commits",
-            api_base_url + "/repos/{}/commits?sha={}&per_page=100{}".format(
-                repo_path, urllib.parse.quote(default_branch, safe=""), query_string
-            ),
-        ):
-            commits = response.json()
-            if not isinstance(commits, list):
-                logger.warning("Expected list of commits but got %s, skipping", type(commits).__name__)
-                continue
-            extraction_time = singer.utils.now()
-            for commit in commits:
-                commit["_sdc_repository"] = repo_path
-                sha = commit.get("sha")
-                commit["pull_request_ids"] = get_commit_pull_request_ids(
-                    repo_path, sha
-                )
-                if (repo_path, sha) in _commit_stats_cache:
-                    commit["stats"] = _commit_stats_cache[(repo_path, sha)]
-                else:
-                    for detail_response in authed_get_all_pages(
-                        "commit_details",
-                        api_base_url + "/repos/{}/commits/{}".format(repo_path, sha),
-                    ):
-                        detail = detail_response.json()
-                        commit["stats"] = detail.get("stats")
-                        _commit_stats_cache[(repo_path, sha)] = commit["stats"]
-                        break
-                with singer.Transformer() as transformer:
-                    rec = transformer.transform(
-                        commit, schema, metadata=metadata.to_map(mdata)
+    try:
+        with metrics.record_counter("commits") as counter:
+            for response in authed_get_all_pages(
+                "commits",
+                api_base_url + "/repos/{}/commits?sha={}&per_page=100{}".format(
+                    repo_path, urllib.parse.quote(default_branch, safe=""), query_string
+                ),
+                raise_on_server_error=True,
+            ):
+                commits = response.json()
+                if not isinstance(commits, list):
+                    logger.warning("Expected list of commits but got %s, skipping", type(commits).__name__)
+                    continue
+                extraction_time = singer.utils.now()
+                for commit in commits:
+                    commit["_sdc_repository"] = repo_path
+                    sha = commit.get("sha")
+                    commit["pull_request_ids"] = get_commit_pull_request_ids(
+                        repo_path, sha
                     )
-                add_insert_timestamp(rec)
-                write_record("commits", rec, time_extracted=extraction_time)
-                singer.write_bookmark(
-                    state,
-                    repo_path,
-                    "commits",
-                    {"since": singer.utils.strftime(extraction_time)},
-                )
-                counter.increment()
+                    if (repo_path, sha) in _commit_stats_cache:
+                        commit["stats"] = _commit_stats_cache[(repo_path, sha)]
+                    else:
+                        for detail_response in authed_get_all_pages(
+                            "commit_details",
+                            api_base_url + "/repos/{}/commits/{}".format(repo_path, sha),
+                        ):
+                            detail = detail_response.json()
+                            commit["stats"] = detail.get("stats")
+                            _commit_stats_cache[(repo_path, sha)] = commit["stats"]
+                            break
+                    with singer.Transformer() as transformer:
+                        rec = transformer.transform(
+                            commit, schema, metadata=metadata.to_map(mdata)
+                        )
+                    add_insert_timestamp(rec)
+                    write_record("commits", rec, time_extracted=extraction_time)
+                    singer.write_bookmark(
+                        state,
+                        repo_path,
+                        "commits",
+                        {"since": singer.utils.strftime(extraction_time)},
+                    )
+                    counter.increment()
+    except RetriableServerError as e:
+        # One repo's commits endpoint timing out / 5xx-ing for the whole retry
+        # window should not throw away a multi-hour sync of every other stream.
+        # Skip the repo and put its bookmark back where this run found it: the
+        # per-record bookmark above is the extraction time, so keeping it after
+        # a mid-pagination failure would hide the pages we never fetched.
+        logger.warning(
+            "Skipping commits for %s after exhausting retries on GitHub server error: %s",
+            repo_path,
+            e,
+        )
+        if previous_bookmark is not None:
+            singer.write_bookmark(state, repo_path, "commits", previous_bookmark)
+        else:
+            bookmarks.clear_bookmark(state, repo_path, "commits")
 
     return state
 
