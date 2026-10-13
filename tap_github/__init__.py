@@ -2124,6 +2124,7 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
         query_string = ""
 
     default_branch = get_default_branch(repo_path)
+    previous_bookmark = bookmarks.get_bookmark(state, repo_path, "commits")
 
     try:
         with metrics.record_counter("commits") as counter:
@@ -2132,6 +2133,7 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
                 api_base_url + "/repos/{}/commits?sha={}&per_page=100{}".format(
                     repo_path, urllib.parse.quote(default_branch, safe=""), query_string
                 ),
+                raise_on_server_error=True,
             ):
                 commits = response.json()
                 if not isinstance(commits, list):
@@ -2171,12 +2173,18 @@ def get_all_commits(schema, repo_path, state, mdata, start_date):
     except RetriableServerError as e:
         # One repo's commits endpoint timing out / 5xx-ing for the whole retry
         # window should not throw away a multi-hour sync of every other stream.
-        # Skip the repo; its bookmark only reflects commits already written.
+        # Skip the repo and put its bookmark back where this run found it: the
+        # per-record bookmark above is the extraction time, so keeping it after
+        # a mid-pagination failure would hide the pages we never fetched.
         logger.warning(
             "Skipping commits for %s after exhausting retries on GitHub server error: %s",
             repo_path,
             e,
         )
+        if previous_bookmark is not None:
+            singer.write_bookmark(state, repo_path, "commits", previous_bookmark)
+        else:
+            bookmarks.clear_bookmark(state, repo_path, "commits")
 
     return state
 

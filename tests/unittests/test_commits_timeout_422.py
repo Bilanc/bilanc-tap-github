@@ -124,6 +124,65 @@ class TestCommitsServerErrorSkipsRepo(unittest.TestCase):
             "2026-02-01T00:00:00Z",
         )
 
+    def _page_then_error(self, error):
+        commit = {
+            "sha": "abc123",
+            "commit": {"message": "m", "author": {"date": "2026-03-01T00:00:00Z"}},
+        }
+        first_page = mock.Mock()
+        first_page.json.return_value = [commit]
+        first_page.links = {"next": {"url": "https://api.github.com/next"}}
+        return [first_page, error]
+
+    def test_failure_after_first_page_restores_existing_bookmark(
+        self, mocked_authed_get, mocked_branch, mocked_write_record
+    ):
+        mocked_authed_get.side_effect = self._page_then_error(
+            tap_github.RetriableServerError("422 timeout")
+        )
+        state = {"bookmarks": {REPO: {"commits": {"since": "2026-02-01T00:00:00Z"}}}}
+
+        with mock.patch("tap_github.get_commit_pull_request_ids", return_value=[]), \
+                mock.patch.dict(tap_github._commit_stats_cache, {(REPO, "abc123"): {}}):
+            tap_github.get_all_commits(load_commits_schema(), REPO, state, [], START_DATE)
+
+        self.assertEqual(mocked_write_record.call_count, 1)
+        self.assertEqual(
+            tap_github.get_bookmark(state, REPO, "commits", "since", None),
+            "2026-02-01T00:00:00Z",
+        )
+
+    def test_failure_after_first_page_clears_new_bookmark(
+        self, mocked_authed_get, mocked_branch, mocked_write_record
+    ):
+        mocked_authed_get.side_effect = self._page_then_error(
+            tap_github.RetriableServerError("422 timeout")
+        )
+        state = {}
+
+        with mock.patch("tap_github.get_commit_pull_request_ids", return_value=[]), \
+                mock.patch.dict(tap_github._commit_stats_cache, {(REPO, "abc123"): {}}):
+            tap_github.get_all_commits(load_commits_schema(), REPO, state, [], START_DATE)
+
+        self.assertIsNone(tap_github.get_bookmark(state, REPO, "commits", "since", None))
+
+    def test_exhausted_502_after_first_page_restores_bookmark(
+        self, mocked_authed_get, mocked_branch, mocked_write_record
+    ):
+        mocked_authed_get.side_effect = self._page_then_error(
+            tap_github.BadGatewayError("502")
+        )
+        state = {"bookmarks": {REPO: {"commits": {"since": "2026-02-01T00:00:00Z"}}}}
+
+        with mock.patch("tap_github.get_commit_pull_request_ids", return_value=[]), \
+                mock.patch.dict(tap_github._commit_stats_cache, {(REPO, "abc123"): {}}):
+            tap_github.get_all_commits(load_commits_schema(), REPO, state, [], START_DATE)
+
+        self.assertEqual(
+            tap_github.get_bookmark(state, REPO, "commits", "since", None),
+            "2026-02-01T00:00:00Z",
+        )
+
     def test_other_errors_still_propagate(
         self, mocked_authed_get, mocked_branch, mocked_write_record
     ):
