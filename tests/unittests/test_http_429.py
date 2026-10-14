@@ -1,4 +1,5 @@
 import json
+import time
 import unittest
 from email.utils import formatdate
 from unittest import mock
@@ -44,6 +45,26 @@ class TestThrottleDelay(unittest.TestCase):
         self.assertEqual(
             tap_github.get_throttle_delay(response(headers=headers), 0), 900
         )
+
+    @unittest.skipUnless(hasattr(time, "tzset"), "requires time.tzset")
+    @mock.patch("time.time", return_value=1700000000)
+    def test_timezone_free_http_dates_are_utc(self, _time):
+        dates = ("Tue Nov 14 22:28:20 2023", formatdate(1700000900))
+        try:
+            for zone in ("UTC-9", "UTC+8"):
+                with mock.patch.dict("os.environ", {"TZ": zone}):
+                    time.tzset()
+                    for value in dates:
+                        with self.subTest(zone=zone, date=value):
+                            headers = {"Retry-After": value}
+                            self.assertEqual(
+                                tap_github.get_throttle_delay(
+                                    response(headers=headers), 0
+                                ),
+                                900,
+                            )
+        finally:
+            time.tzset()
 
     def test_invalid_retry_after_uses_fallback(self):
         for value in (None, "", "invalid", "-10", "nan", "inf", "-inf"):

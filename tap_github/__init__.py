@@ -397,9 +397,10 @@ def get_throttle_delay(response, attempt):
             retry_after_seconds = float(retry_after)
         except (ValueError, TypeError):
             try:
-                retry_after_seconds = (
-                    parsedate_to_datetime(retry_after).timestamp() - time.time()
-                )
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=pytz.UTC)
+                retry_after_seconds = retry_at.timestamp() - time.time()
             except (ValueError, TypeError, OverflowError):
                 retry_after_seconds = 0
         if math.isfinite(retry_after_seconds):
