@@ -13,6 +13,7 @@ import math
 import argparse
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 import pytz
 from singer import bookmarks, metrics, metadata
 from simplejson import JSONDecodeError
@@ -55,6 +56,7 @@ _commit_stats_cache: Dict[Tuple[str, str], Optional[dict]] = {}
 
 # set default timeout of 300 seconds
 REQUEST_TIMEOUT = 300
+MAX_THROTTLE_ATTEMPTS = 5
 
 REQUIRED_CONFIG_KEYS = ["start_date"]
 
@@ -387,6 +389,31 @@ def rate_throttling(response):
         time.sleep(seconds_to_sleep)
 
 
+def get_throttle_delay(response, attempt):
+    delay = min(60 * 2 ** attempt, 600)
+    retry_after = response.headers.get("Retry-After")
+    if retry_after is not None:
+        try:
+            retry_after_seconds = float(retry_after)
+        except (ValueError, TypeError):
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=pytz.UTC)
+                retry_after_seconds = retry_at.timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                retry_after_seconds = 0
+        if math.isfinite(retry_after_seconds):
+            delay = max(delay, math.ceil(retry_after_seconds))
+    if response.headers.get("X-RateLimit-Remaining") == "0":
+        try:
+            reset_time = int(response.headers["X-RateLimit-Reset"])
+            delay = max(delay, calculate_seconds(reset_time))
+        except (KeyError, ValueError, TypeError):
+            pass
+    return delay
+
+
 access_token_expires_at = None
 refresh_token_expires_at = None
 config_path = None
@@ -464,11 +491,26 @@ def refresh_token_if_expired():
     factor=2,
 )
 def authed_get(source, url, headers={}):
-    refresh_token_if_expired()
     with metrics.http_request_timer(source) as timer:
-        logger.info("Making request to %s", url)
-        resp = session.request(method="get", url=url, headers=headers, timeout=get_request_timeout())
-        logger.info("Request received status code %s", resp.status_code)
+        for attempt in range(MAX_THROTTLE_ATTEMPTS):
+            refresh_token_if_expired()
+            logger.info("Making request to %s", url)
+            resp = session.request(
+                method="get", url=url, headers=headers, timeout=get_request_timeout()
+            )
+            logger.info("Request received status code %s", resp.status_code)
+            if resp.status_code != 429 or attempt == MAX_THROTTLE_ATTEMPTS - 1:
+                break
+            delay = get_throttle_delay(resp, attempt)
+            logger.warning(
+                "HTTP 429 on %s; retry %s/%s in %s seconds (Retry-After present: %s)",
+                source,
+                attempt + 1,
+                MAX_THROTTLE_ATTEMPTS - 1,
+                delay,
+                "Retry-After" in resp.headers,
+            )
+            time.sleep(delay)
         if resp.status_code != 200:
             # Copilot stream handles 204 (no report) and 400 (rejected day) itself
             if source == COPILOT_USER_METRICS_STREAM and resp.status_code in (204, 400):
