@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
 import backoff
@@ -11,6 +12,12 @@ NANGO_API_URL = "https://api.nango.dev"
 NANGO_REQUEST_TIMEOUT = 30
 NANGO_MAX_TRIES = 5
 NANGO_FORCE_REFRESH_RETRY_DELAY = 5
+NANGO_EXPIRES_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+# The tap treats a Nango access token as stale this long before `expires_at`
+# (Nango itself refreshes within 15 minutes of expiry). A token handed back by
+# the no-force fallback must outlive this margin, otherwise every GitHub
+# request would re-run the failing forced refresh.
+NANGO_EXPIRY_MARGIN = timedelta(minutes=20)
 
 
 class NangoServerError(Exception):
@@ -52,7 +59,12 @@ def nango_error_details(response: requests.Response) -> str:
 
 @backoff.on_exception(
     backoff.expo,
-    (requests.Timeout, requests.ConnectionError, NangoServerError),
+    (
+        requests.Timeout,
+        requests.ConnectionError,
+        requests.exceptions.ChunkedEncodingError,
+        NangoServerError,
+    ),
     max_tries=NANGO_MAX_TRIES,
     factor=2,
 )
@@ -85,6 +97,17 @@ def fetch_nango_connection(
     return response
 
 
+def _outlives_margin(expires_at: Optional[str]) -> bool:
+    """True if the token is usable for longer than `NANGO_EXPIRY_MARGIN`."""
+    if not expires_at:
+        return True  # API key connections (github-pat) never expire
+    try:
+        expiry = datetime.strptime(expires_at, NANGO_EXPIRES_AT_FORMAT)
+    except ValueError:
+        return False
+    return expiry - NANGO_EXPIRY_MARGIN > datetime.utcnow()
+
+
 def refresh_nango_token(
     config: Dict[str, Any],
     provider_config_key: str = "github-app-oauth",
@@ -97,7 +120,9 @@ def refresh_nango_token(
     are backed off and retried; a 400 on the forced refresh (the provider
     rejected this one refresh, e.g. a rotated refresh token raced with another
     refresh) is retried once without `force_refresh`, since Nango still holds
-    a valid token. Any other non-2xx (401/403/404, or a 400 on both attempts)
+    a valid token; that token is only accepted if it outlives
+    `NANGO_EXPIRY_MARGIN`, so the caller does not loop on the failing forced
+    refresh for a token that is about to expire. Any other non-2xx (401/403/404, or a 400 on both attempts)
     raises `NangoRefreshError` carrying Nango's error code and message.
 
     Args:
@@ -124,11 +149,13 @@ def refresh_nango_token(
 
     response = fetch_nango_connection(config, provider_config_key, force_refresh=True)
 
+    forced_refresh_error = None
     if response.status_code == 400:
+        forced_refresh_error = nango_error_details(response)
         logger.warning(
             "Nango returned 400 on force_refresh of connection (%s); retrying in "
             "%ss without force_refresh",
-            nango_error_details(response),
+            forced_refresh_error,
             NANGO_FORCE_REFRESH_RETRY_DELAY,
         )
         time.sleep(NANGO_FORCE_REFRESH_RETRY_DELAY)
@@ -145,6 +172,17 @@ def refresh_nango_token(
         )
 
     credentials = response.json().get("credentials", {})
+
+    if forced_refresh_error is not None and not _outlives_margin(
+        credentials.get("expires_at")
+    ):
+        raise NangoRefreshError(
+            f"Nango returned 400 on force_refresh for connection "
+            f"{config.get('nango_connection_id')} ({provider_config_key}): "
+            f"{forced_refresh_error}; the token Nango still holds expires at "
+            f"{credentials.get('expires_at')}, too soon to use",
+            response,
+        )
 
     # OAuth2 connections (github-app-oauth) return the token in `access_token`
     # with an `expires_at`. API key connections (github-pat) return the token in

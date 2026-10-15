@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import datetime, timedelta
 from unittest import mock
 
 import requests
@@ -18,9 +19,21 @@ def response(status, body=None, reason=None):
     return result
 
 
-def ok_response(token="new-token", expires_at="2026-10-15T17:00:00Z"):
+def expires_in(**kwargs):
+    return (datetime.utcnow() + timedelta(**kwargs)).strftime(
+        nango.NANGO_EXPIRES_AT_FORMAT
+    )
+
+
+def ok_response(token="new-token", expires_at=None):
     return response(
-        200, {"credentials": {"access_token": token, "expires_at": expires_at}}
+        200,
+        {
+            "credentials": {
+                "access_token": token,
+                "expires_at": expires_at or expires_in(hours=7),
+            }
+        },
     )
 
 
@@ -44,7 +57,7 @@ class TestRefreshNangoToken(unittest.TestCase):
         cfg, expires_at = nango.refresh_nango_token(config())
 
         self.assertEqual(cfg["access_token"], "new-token")
-        self.assertEqual(expires_at, "2026-10-15T17:00:00Z")
+        self.assertEqual(expires_at, get.return_value.json()["credentials"]["expires_at"])
         self.assertEqual(get.call_count, 1)
         self.assertIn("force_refresh=true", self.urls(get)[0])
         self.assertIn("provider_config_key=github-app-oauth", self.urls(get)[0])
@@ -62,6 +75,30 @@ class TestRefreshNangoToken(unittest.TestCase):
         self.assertIn("force_refresh=true", urls[0])
         self.assertNotIn("force_refresh", urls[1])
         _sleep.assert_called_once_with(nango.NANGO_FORCE_REFRESH_RETRY_DELAY)
+
+    def test_400_fallback_token_expiring_within_margin_is_rejected(self, get, _sleep):
+        get.side_effect = [
+            refresh_error(),
+            ok_response(token="held-token", expires_at=expires_in(minutes=10)),
+        ]
+
+        with self.assertRaises(nango.NangoRefreshError) as ctx:
+            nango.refresh_nango_token(config())
+
+        self.assertEqual(get.call_count, 2)
+        self.assertIn("refresh_token_external_error: GitHub rejected it", str(ctx.exception))
+        self.assertIn("too soon to use", str(ctx.exception))
+
+    def test_400_fallback_api_key_without_expiry_is_accepted(self, get, _sleep):
+        get.side_effect = [
+            refresh_error(),
+            response(200, {"credentials": {"apiKey": "ghp_x"}}),
+        ]
+
+        cfg, expires_at = nango.refresh_nango_token(config(), "github-pat")
+
+        self.assertEqual(cfg["access_token"], "ghp_x")
+        self.assertIsNone(expires_at)
 
     def test_400_twice_raises_with_nango_error_details(self, get, _sleep):
         get.side_effect = [
@@ -121,17 +158,20 @@ class TestRefreshNangoToken(unittest.TestCase):
         self.assertIn("503", str(ctx.exception))
         self.assertIn("Service Temporarily Unavailable", str(ctx.exception))
 
-    def test_timeout_and_connection_error_are_retried(self, get, _sleep):
+    def test_timeout_connection_and_chunked_encoding_errors_are_retried(
+        self, get, _sleep
+    ):
         get.side_effect = [
             requests.Timeout("timed out"),
             requests.ConnectionError("reset"),
+            requests.exceptions.ChunkedEncodingError("Connection broken"),
             ok_response(),
         ]
 
         cfg, _ = nango.refresh_nango_token(config())
 
         self.assertEqual(cfg["access_token"], "new-token")
-        self.assertEqual(get.call_count, 3)
+        self.assertEqual(get.call_count, 4)
 
     def test_api_key_connection_has_no_expiry(self, get, _sleep):
         get.return_value = response(200, {"credentials": {"apiKey": "ghp_x"}})
@@ -148,6 +188,18 @@ class TestRefreshNangoToken(unittest.TestCase):
         with self.assertRaises(ValueError):
             nango.refresh_nango_token({"nango_secret_key": "secret"})
         get.assert_not_called()
+
+
+class TestOutlivesMargin(unittest.TestCase):
+    def test_margin_matches_tap_early_refresh(self):
+        self.assertEqual(nango.NANGO_EXPIRY_MARGIN, timedelta(minutes=20))
+
+    def test_boundaries(self):
+        self.assertTrue(nango._outlives_margin(None))
+        self.assertTrue(nango._outlives_margin(expires_in(minutes=21)))
+        self.assertFalse(nango._outlives_margin(expires_in(minutes=19)))
+        self.assertFalse(nango._outlives_margin(expires_in(minutes=-5)))
+        self.assertFalse(nango._outlives_margin("not-a-date"))
 
 
 class TestNangoErrorDetails(unittest.TestCase):

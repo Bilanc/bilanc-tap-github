@@ -18,7 +18,7 @@ import pytz
 from singer import bookmarks, metrics, metadata
 from simplejson import JSONDecodeError
 
-from tap_github.nango import refresh_nango_token
+from tap_github.nango import NANGO_EXPIRY_MARGIN, refresh_nango_token
 
 
 def add_insert_timestamp(record):
@@ -462,7 +462,7 @@ def refresh_token_if_expired():
             # set to 20 minutes before actual expiry to avoid Nango frontend edge case, refreshing token automatically within 15 minutes of expiring
             access_token_expires_at = (
                 datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ")
-                - timedelta(minutes=20)
+                - NANGO_EXPIRY_MARGIN
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.info(
                 f"Refreshed Nango access token, expires at {access_token_expires_at}"
@@ -3197,7 +3197,7 @@ def main():
             # set to 20 minutes before actual expiry to avoid Nango frontend edge case, refreshing token automatically within 15 minutes of expiring
             access_token_expires_at = (
                 datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ")
-                - timedelta(minutes=20)
+                - NANGO_EXPIRY_MARGIN
             ).strftime("%Y-%m-%dT%H:%M:%SZ")
             logger.info(
                 f"Refreshed Nango access token, expires at {access_token_expires_at}"
