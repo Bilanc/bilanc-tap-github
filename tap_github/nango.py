@@ -149,8 +149,10 @@ def refresh_nango_token(
 
     response = fetch_nango_connection(config, provider_config_key, force_refresh=True)
 
+    forced_refresh_response = None
     forced_refresh_error = None
     if response.status_code == 400:
+        forced_refresh_response = response
         forced_refresh_error = nango_error_details(response)
         logger.warning(
             "Nango returned 400 on force_refresh of connection (%s); retrying in "
@@ -181,7 +183,7 @@ def refresh_nango_token(
             f"{config.get('nango_connection_id')} ({provider_config_key}): "
             f"{forced_refresh_error}; the token Nango still holds expires at "
             f"{credentials.get('expires_at')}, too soon to use",
-            response,
+            forced_refresh_response,
         )
 
     # OAuth2 connections (github-app-oauth) return the token in `access_token`

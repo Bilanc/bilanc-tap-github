@@ -88,6 +88,7 @@ class TestRefreshNangoToken(unittest.TestCase):
         self.assertEqual(get.call_count, 2)
         self.assertIn("refresh_token_external_error: GitHub rejected it", str(ctx.exception))
         self.assertIn("too soon to use", str(ctx.exception))
+        self.assertEqual(ctx.exception.status_code, 400)
 
     def test_400_fallback_api_key_without_expiry_is_accepted(self, get, _sleep):
         get.side_effect = [
