@@ -260,6 +260,7 @@ def get_bookmark(state, repo, stream_name, bookmark_key, start_date):
 
 
 GITHUB_TIMEOUT_MESSAGE = "The request is taking too long to process"
+GITHUB_TOO_MANY_FILES_MESSAGE = "too many files changed"
 
 
 def raise_for_error(resp, source, remaining):
@@ -313,6 +314,14 @@ def raise_for_error(resp, source, remaining):
         # Treat it as non-fatal for commit_details so the sync keeps going
         # instead of crashing on one oversized commit.
         if source == "commit_details":
+            return None
+        # Get-a-pull-request computes the PR's diff stats and refuses with
+        # "too many files changed" on oversized PRs. The list record for that PR
+        # is already written, so drop only its pull_request_details row.
+        if (
+            source == "pull_request_details"
+            and GITHUB_TOO_MANY_FILES_MESSAGE in str(details)
+        ):
             return None
         # GitHub also answers 422 when the query itself times out server-side
         # (e.g. list-commits with `since` on a repo whose default branch has no
@@ -1947,6 +1956,8 @@ def get_all_pull_requests(schemas, repo_path, state, mdata, start_date):
 
 def get_pull_request_details(pull_request, schemas, repo_path, state, mdata):
     pr_response = authed_get("pull_request_details", pull_request["url"])
+    if pr_response.status_code != 200:
+        return None
     pr = pr_response.json()
     pr["_sdc_repository"] = repo_path
     add_insert_timestamp(pr)
