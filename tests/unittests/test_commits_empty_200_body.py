@@ -92,6 +92,19 @@ class TestAuthedGetRetriesEmpty200(unittest.TestCase):
         self.assertEqual(resp.json()["default_branch"], "main")
         self.assertEqual(mocked_request.call_count, 1)
 
+    def test_copilot_empty_200_is_returned_to_caller(
+        self, mocked_request, mocked_refresh, mocked_timeout, mocked_sleep
+    ):
+        mocked_request.return_value = Mockresponse(200, b"")
+
+        resp = tap_github.authed_get(
+            tap_github.COPILOT_USER_METRICS_STREAM, "https://api.github.com/x"
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.content, b"")
+        self.assertEqual(mocked_request.call_count, 1)
+
     def test_404_still_returns_empty_object(
         self, mocked_request, mocked_refresh, mocked_timeout, mocked_sleep
     ):
