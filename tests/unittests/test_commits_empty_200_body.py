@@ -13,10 +13,17 @@ class Mockresponse:
 
     def __init__(self, status_code, content=b"", links=None):
         self.status_code = status_code
-        self.content = content
-        self.text = content.decode("utf-8", errors="replace")
+        self._content = content
         self.headers = {"X-RateLimit-Remaining": 4000, "X-RateLimit-Reset": 0}
         self.links = links or {}
+
+    @property
+    def content(self):
+        return self._content
+
+    @property
+    def text(self):
+        return self._content.decode("utf-8", errors="replace")
 
     def json(self):
         # simplejson's JSONDecodeError (a ValueError), as requests raises it
@@ -92,8 +99,8 @@ class TestAuthedGetRetriesEmpty200(unittest.TestCase):
 
         resp = tap_github.authed_get("commits", "https://api.github.com/x")
 
-        self.assertEqual(resp.content, b"")
-        self.assertEqual(resp._content, b"{}")
+        self.assertEqual(resp.content, b"{}")
+        self.assertEqual(resp.json(), {})
         self.assertEqual(mocked_request.call_count, 1)
 
 
