@@ -481,6 +481,14 @@ def refresh_token_if_expired():
             refresh_oauth_token(config)
 
 
+def has_json_body(resp):
+    try:
+        resp.json()
+    except ValueError:
+        return False
+    return True
+
+
 # pylint: disable=dangerous-default-value
 # during 'Timeout' error there is also possibility of 'ConnectionError',
 # hence added backoff for 'ConnectionError' too.
@@ -539,6 +547,16 @@ def authed_get(source, url, headers={}):
                 return resp
             # retry
             raise_for_error(resp, source, remaining)
+        elif not has_json_body(resp):
+            # GitHub's slow path (e.g. list-commits with `since` scanning a whole
+            # history) sometimes answers 200 with an empty body instead of the
+            # 422 timeout. Treat it like a 5xx so backoff retries it and the
+            # callers that skip a repo on RetriableServerError keep working.
+            raise RetriableServerError(
+                "HTTP 200 with non-JSON body ({} bytes) from {}".format(
+                    len(resp.content or b""), url
+                )
+            )
         timer.tags[metrics.Tag.http_status_code] = resp.status_code
         if resp.status_code in [404, 409] and source != COPILOT_USER_METRICS_STREAM:
             # return an empty response body since we're not raising a NotFoundException
