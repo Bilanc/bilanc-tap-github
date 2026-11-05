@@ -13,7 +13,7 @@ setup(name='tap-github',
           'singer-python==5.12.1',
           'requests==2.20.0',
           'backoff==1.8.0',
-          'cryptography==37.0.4',
+          'cryptography==50.0.0',
           'pyjwt==2.4.0'
       ],
       extras_require={
