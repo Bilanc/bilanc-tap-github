@@ -82,6 +82,12 @@
         "integer"
       ]
     },
+    "ai_credits_used": {
+      "type": [
+        "null",
+        "number"
+      ]
+    },
     "used_agent": {
       "type": [
         "null",

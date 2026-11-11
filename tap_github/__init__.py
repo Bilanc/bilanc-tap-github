@@ -1042,6 +1042,7 @@ def get_copilot_user_metrics_1_day(schema, _repo_path, _state, mdata, _start_dat
                     "loc_suggested_to_delete_sum": report_record.get("loc_suggested_to_delete_sum"),
                     "loc_added_sum": report_record.get("loc_added_sum"),
                     "loc_deleted_sum": report_record.get("loc_deleted_sum"),
+                    "ai_credits_used": report_record.get("ai_credits_used"),
                     "used_agent": report_record.get("used_agent"),
                     "used_chat": report_record.get("used_chat"),
                     "used_cli": report_record.get("used_cli"),
