@@ -261,6 +261,7 @@ def get_bookmark(state, repo, stream_name, bookmark_key, start_date):
 
 GITHUB_TIMEOUT_MESSAGE = "The request is taking too long to process"
 GITHUB_TOO_MANY_FILES_MESSAGE = "too many files changed"
+GITHUB_DIFF_TOO_SLOW_MESSAGE = "diff is taking too long to generate"
 
 
 def raise_for_error(resp, source, remaining):
@@ -321,6 +322,14 @@ def raise_for_error(resp, source, remaining):
         if (
             source == "pull_request_details"
             and GITHUB_TOO_MANY_FILES_MESSAGE in str(details)
+        ):
+            return None
+        # List-pull-request-files refuses with "this diff is taking too long to
+        # generate" on PRs whose diff GitHub cannot compute. Drop only that PR's
+        # pull_request_files rows instead of failing the whole sync.
+        if (
+            source == "pull_request_files"
+            and GITHUB_DIFF_TOO_SLOW_MESSAGE in str(details)
         ):
             return None
         # GitHub also answers 422 when the query itself times out server-side
