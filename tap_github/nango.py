@@ -185,7 +185,15 @@ def refresh_nango_token(
         config["access_token"] = user_credentials["access_token"]
         # Only set if the GitHub App opts into expiring user tokens; ours does
         # not, so this is normally None and the token is never refreshed.
-        return config, user_credentials.get("expires_at")
+        expires_at = user_credentials.get("expires_at")
+        if not _outlives_margin(expires_at):
+            raise NangoRefreshError(
+                f"Nango connection {config.get('nango_connection_id')} "
+                f"({provider_config_key}) user token expired at {expires_at} "
+                "and cannot be refreshed through Nango (force_refresh only "
+                "re-mints the installation token, not the user token)"
+            )
+        return config, expires_at
 
     response = fetch_nango_connection(config, provider_config_key, force_refresh=True)
 
