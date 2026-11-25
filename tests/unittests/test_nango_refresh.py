@@ -183,6 +183,48 @@ class TestRefreshNangoToken(unittest.TestCase):
         self.assertIsNone(expires_at)
         self.assertIn("provider_config_key=github-pat", self.urls(get)[0])
 
+    def test_user_token_read_from_user_credentials_without_force_refresh(
+        self, get, _sleep
+    ):
+        get.return_value = response(
+            200,
+            {
+                "credentials": {"access_token": "ghs_x", "expires_at": expires_in(hours=1)},
+                "connection_config": {
+                    "userCredentials": {"type": "OAUTH2", "access_token": "ghu_x"}
+                },
+            },
+        )
+
+        cfg, expires_at = nango.refresh_nango_token(
+            config(), "github-app-oauth", token_type="user"
+        )
+
+        self.assertEqual(cfg["access_token"], "ghu_x")
+        self.assertIsNone(expires_at)
+        self.assertEqual(get.call_count, 1)
+        self.assertNotIn("force_refresh", self.urls(get)[0])
+
+    def test_user_token_missing_raises(self, get, _sleep):
+        get.return_value = response(
+            200, {"credentials": {"access_token": "ghs_x"}, "connection_config": {}}
+        )
+
+        with self.assertRaises(nango.NangoRefreshError):
+            nango.refresh_nango_token(config(), token_type="user")
+
+    def test_user_token_nango_error_raises(self, get, _sleep):
+        get.return_value = response(404, {"error": {"code": "not_found"}})
+
+        with self.assertRaises(nango.NangoRefreshError):
+            nango.refresh_nango_token(config(), token_type="user")
+        self.assertEqual(get.call_count, 1)
+
+    def test_unknown_token_type_raises_before_any_request(self, get, _sleep):
+        with self.assertRaises(ValueError):
+            nango.refresh_nango_token(config(), token_type="installation")
+        get.assert_not_called()
+
     def test_missing_config_raises_before_any_request(self, get, _sleep):
         with self.assertRaises(ValueError):
             nango.refresh_nango_token({"nango_connection_id": "conn-1"})
