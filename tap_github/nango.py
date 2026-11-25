@@ -108,9 +108,13 @@ def _outlives_margin(expires_at: Optional[str]) -> bool:
     return expiry - NANGO_EXPIRY_MARGIN > datetime.utcnow()
 
 
+NANGO_TOKEN_TYPES = ("app", "user")
+
+
 def refresh_nango_token(
     config: Dict[str, Any],
     provider_config_key: str = "github-app-oauth",
+    token_type: str = "app",
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     """
     Get a Nango connection by its ID with force refresh.
@@ -130,6 +134,13 @@ def refresh_nango_token(
         provider_config_key: The Nango integration to use. Defaults to the GitHub
             App OAuth integration ("github-app-oauth"). Self-hosted GitHub
             Enterprise connections use a personal access token ("github-pat").
+        token_type: "app" (default) uses the installation token (ghs_) from
+            `credentials`. "user" uses the token of the user who authorised the
+            app (ghu_) from `connection_config.userCredentials`. The user token
+            is rate limited per user, separately from the installation, so a
+            long backfill can use it without draining the installation quota
+            the scheduled syncs rely on. It is fetched without `force_refresh`,
+            which only re-mints the installation token.
 
     Returns:
         Tuple of (updated config with access_token set, expires_at). expires_at is
@@ -146,6 +157,35 @@ def refresh_nango_token(
 
     if not config.get("nango_connection_id"):
         raise ValueError("nango_connection_id not configured")
+
+    if token_type not in NANGO_TOKEN_TYPES:
+        raise ValueError(
+            f"nango_token_type must be one of {NANGO_TOKEN_TYPES}, got {token_type!r}"
+        )
+
+    if token_type == "user":
+        response = fetch_nango_connection(
+            config, provider_config_key, force_refresh=False
+        )
+        if not response.ok:
+            raise NangoRefreshError(
+                f"Nango returned {response.status_code} for connection "
+                f"{config.get('nango_connection_id')} ({provider_config_key}): "
+                f"{nango_error_details(response)}",
+                response,
+            )
+        connection_config = response.json().get("connection_config") or {}
+        user_credentials = connection_config.get("userCredentials") or {}
+        if not user_credentials.get("access_token"):
+            raise NangoRefreshError(
+                f"Nango connection {config.get('nango_connection_id')} "
+                f"({provider_config_key}) has no user access token in "
+                "connection_config.userCredentials"
+            )
+        config["access_token"] = user_credentials["access_token"]
+        # Only set if the GitHub App opts into expiring user tokens; ours does
+        # not, so this is normally None and the token is never refreshed.
+        return config, user_credentials.get("expires_at")
 
     response = fetch_nango_connection(config, provider_config_key, force_refresh=True)
 

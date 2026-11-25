@@ -439,6 +439,7 @@ organization = None
 enterprise_slug = None
 is_nango_token = False
 nango_provider_config_key = "github-app-oauth"
+nango_token_type = "app"
 # GitHub App installation-token refresh context. Installation tokens expire
 # after ~1h, so we hold the credentials needed to re-mint one mid-sync.
 is_app_token = False
@@ -476,7 +477,9 @@ def refresh_token_if_expired():
 
         if is_nango_token:
             logger.info("Nango access token is stale, refreshing...")
-            config, access_token_expires_at = refresh_nango_token(config, nango_provider_config_key)
+            config, access_token_expires_at = refresh_nango_token(
+                config, nango_provider_config_key, nango_token_type
+            )
             # set to 20 minutes before actual expiry to avoid Nango frontend edge case, refreshing token automatically within 15 minutes of expiring
             access_token_expires_at = (
                 datetime.strptime(access_token_expires_at, "%Y-%m-%dT%H:%M:%SZ")
@@ -3184,6 +3187,7 @@ def main():
     global enterprise_slug
     global is_nango_token
     global nango_provider_config_key
+    global nango_token_type
     global api_base_url
 
     # Store config path for later use
@@ -3228,8 +3232,11 @@ def main():
         # Self-hosted connections authenticate with a personal access token
         # (github-pat); cloud connections use the GitHub App OAuth integration.
         nango_provider_config_key = "github-pat" if self_hosted else "github-app-oauth"
+        # "user" authenticates with the authorising user's token instead of the
+        # installation token, so a long backfill has its own rate-limit quota.
+        nango_token_type = args.config.get("nango_token_type") or "app"
         args.config, access_token_expires_at = refresh_nango_token(
-            args.config, nango_provider_config_key
+            args.config, nango_provider_config_key, nango_token_type
         )
         is_nango_token = True
         refresh_token_expires_at = None
@@ -3243,8 +3250,12 @@ def main():
                 f"Refreshed Nango access token, expires at {access_token_expires_at}"
             )
         else:
-            # API key connections (github-pat) do not expire and need no refresh.
-            logger.info("Retrieved Nango personal access token (no expiry)")
+            # API key connections (github-pat) and non-expiring GitHub App user
+            # tokens need no refresh.
+            logger.info(
+                "Retrieved Nango %s token (no expiry)",
+                "user" if nango_token_type == "user" else "personal access",
+            )
 
     # Multi-installation discovery mode: with only `app_id` + `private_key` (no
     # `installation_id`), authenticate as the app, enumerate every installation,
